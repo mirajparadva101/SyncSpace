@@ -38,19 +38,31 @@ CREATE TABLE files (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Users table (naya add karo)
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    password TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- RLS enable karo
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE texts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
 -- Public access policies (security = session ID + password)
 CREATE POLICY "Public sessions" ON sessions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public sections" ON sections FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public texts" ON texts FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public files" ON files FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Public users" ON users FOR ALL USING (true) WITH CHECK (true);
 
 -- Realtime enable karo
 ALTER PUBLICATION supabase_realtime ADD TABLE sections;
 ALTER PUBLICATION supabase_realtime ADD TABLE texts;
 ALTER PUBLICATION supabase_realtime ADD TABLE files;
+ALTER PUBLICATION supabase_realtime ADD TABLE users;

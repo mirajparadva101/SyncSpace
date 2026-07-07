@@ -1,72 +1,100 @@
-# SyncSpace — Real-Time Collaboration Platform
+🚀 SyncSpace — Real-Time Collaboration Platform
+https://img.shields.io/badge/License-MIT-yellow.svg
+https://img.shields.io/badge/Supabase-Powered-3ECF8E
+https://img.shields.io/badge/Bootstrap-5.3-7952B3
+https://img.shields.io/badge/Vercel-Deployed-000000
+https://img.shields.io/badge/JavaScript-ES6+-F7DF1E
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Supabase](https://img.shields.io/badge/Supabase-Powered-3ECF8E)](https://supabase.com)
-[![Bootstrap](https://img.shields.io/badge/Bootstrap-5.3-7952B3)](https://getbootstrap.com)
-[![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+SyncSpace is a modern, secure, and real-time collaborative workspace that allows teams to share text notes and files instantly. It features a complete User Authentication system (Sign Up/Sign In), live dashboard stats, and secure credential management using Vercel Environment Variables. Built with Supabase for real-time sync, it's perfect for brainstorming, meeting notes, code snippets, and team collaboration.
 
-**SyncSpace** is a real-time collaborative workspace that allows teams to share text notes and files instantly. Built with Supabase for real-time sync, it's perfect for brainstorming, meeting notes, code snippets, and team collaboration.
+https://via.placeholder.com/800x400/3ECF8E/FFFFFF?text=SyncSpace+%257C+Real-Time+Collaboration
 
-![SyncSpace Demo](https://via.placeholder.com/800x400/3ECF8E/FFFFFF?text=SyncSpace+%7C+Real-Time+Collaboration)
+✨ Features
+👤 User Authentication — Secure Sign Up & Sign In with SHA-256 hashed passwords and auto-login via LocalStorage.
+📊 Live Dashboard — Displays real-time stats of Total Registered Users and Active Sessions.
+🛡️ Secure Architecture — No hardcoded API keys. Credentials are fetched securely via Vercel Serverless Functions.
+🔐 Protected Sessions — Password-protected collaboration spaces with SHA-256 hashing.
+📝 Real-time Text Editor — Live updates across all connected devices (debounced for performance).
+📎 File Sharing — Upload, download, and delete files up to 2MB (images, documents, zip files).
+🔄 Instant Sync — Powered by Supabase Realtime subscriptions.
+📱 Responsive Dark Theme — Eye-friendly, modern dark UI optimized for long sessions and mobile devices.
+📂 Section Organization — Organize session content into multiple named sections.
+📤 Export Options — Copy all text or download sections as .txt files.
+🔗 Share Links — Generate shareable links with session ID (?join=SESSION_ID).
+🚀 Quick Start
+Prerequisites
+A Supabase account (free tier works perfectly)
+A Vercel account (for deployment with env vars)
+A GitHub account
+Modern web browser (Chrome, Firefox, Safari, Edge)
 
-## ✨ Features
+1. Supabase Setup
+   🗄️ Database Schema
+   Tables
+   Table Purpose Columns
+   users User authentication id, user_id, name, password, created_at
+   sessions Collaboration spaces id, password, created_at
+   sections Content organization id, session_id, name, sort_order, created_at
+   texts Real-time text content id, section_id, session_id, content, updated_at
+   files File storage (base64) id, section_id, session_id, file_name, file_data, file_type, file_size, created_at
 
-- 🔐 **Secure Sessions** — Password-protected collaboration spaces with SHA-256 hashing
-- 📝 **Real-time Text Editor** — Live updates across all connected devices
-- 📎 **File Sharing** — Upload and share files up to 2MB (images, documents, zip files)
-- 🔄 **Instant Sync** — Powered by Supabase Realtime subscriptions
-- 📱 **Responsive Design** — Works seamlessly on desktop, tablet, and mobile
-- 🎨 **Dark Theme** — Eye-friendly dark interface optimized for long sessions
-- 📋 **Session Management** — Create, join, and leave sessions easily
-- 📂 **Section Organization** — Organize content into named sections
-- 📤 **Export Options** — Download text as .txt files
-- 🔗 **Share Links** — Generate shareable links with session ID
+2. Deploy to Vercel (Recommended)
+   This application is designed to hide your Supabase credentials from GitHub using Vercel Environment Variables.
 
-## 🚀 Quick Start
+Push this project to your GitHub repository.
+Go to Vercel and click "Add New Project".
+Import your GitHub repository.
+Before clicking "Deploy", expand "Environment Variables" and add the following:
+Name
+Value
+SUPABASE_URL Your Supabase Project URL
+SUPABASE_ANON_KEY Your Supabase Anon Key
 
-### Prerequisites
+Click Deploy.
+Once deployed, your app will securely fetch credentials via the /api/config serverless function! 3. Run Locally (Without Vercel)
+If you run the index.html file directly in your browser, the /api/config call will fail. The app handles this gracefully:
 
-- A [Supabase](https://supabase.com) account (free tier works perfectly)
-- Modern web browser (Chrome, Firefox, Safari, Edge)
-- Basic understanding of PostgreSQL (optional)
+Open index.html in your browser.
+The app will show a "Manual Configuration" fallback screen.
+Enter your Supabase URL and Anon Key there.
+The credentials will be saved in your browser's LocalStorage for future visits.
+Alternatively, use the Vercel CLI to run the project locally with environment variables:
 
-### 1. Supabase Setup
+bash
 
-#### Step 1: Create a Supabase Project
+npm i -g vercel
+vercel env pull .env.local
+vercel dev
+🔒 Security Architecture
+No Hardcoded Keys: The index.html file contains zero Supabase credentials.
+Serverless Fetching: On page load, the app calls the /api/config endpoint.
+Vercel Environment Variables: The api/config.js serverless function securely reads the credentials from Vercel's hidden environment variables and returns them to the app.
+Fallback System: If the API call fails, the app displays a manual configuration screen. Credentials are stored only in the user's LocalStorage, never in the code.
+📂 Project Structure
+text
 
-1. Go to [supabase.com](https://supabase.com) and sign up/login
-2. Click "New Project"
-3. Enter project name and database password
-4. Choose region closest to your users
-5. Wait for database to initialize (2-3 minutes)
+syncspace/
+├── api/
+│ └── config.js # Vercel Serverless Function (reads env vars)
+├── index.html # Main application (HTML, CSS, JS)
+├── vercel.json # Routing configuration for Vercel
+└── README.md # Project Documentation
+💡 How It Works
+Authentication: Users must Sign Up (Name, User ID, Password) or Sign In to create/join sessions. Passwords are hashed with SHA-256 + salt before being stored in the users table. Auto-login is supported via LocalStorage.
+Home Dashboard: The home page shows live stats (Total Users, Total Sessions). Without logging in, action cards are locked.
+Session Creation/Joining: Generates a 6-character uppercase ID. The session password is also SHA-256 hashed before storage.
+Real-time Sync: When a user types, text is debounced (600ms), saved to the texts table, and broadcasted via Supabase Realtime to all other browser tabs/devices in that session.
+File Handling: Files are converted to Base64 and stored in the files table (max 2MB per file). Users can download or delete them.
+🤝 Contributing
+Fork the repository
+Create your feature branch (git checkout -b feature/amazing-feature)
+Commit your changes (git commit -m 'Add some amazing feature')
+Push to the branch (git push origin feature/amazing-feature)
+Open a Pull Request
+📄 License
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-#### Step 2: Run the SQL Setup
-
-1. In your Supabase dashboard, go to **SQL Editor**
-2. Copy the entire contents of `table.sql`
-3. Paste and click "Run" to execute
-4. This creates all required tables and enables RLS & Realtime
-
-#### Step 3: Enable Realtime
-
-1. Go to **Database → Replication** in Supabase
-2. Enable Realtime for these tables:
-   - `sections`
-   - `texts`
-   - `files`
-3. Click "Save" to apply changes
-
-#### Step 4: Get Your Credentials
-
-1. Go to **Project Settings → API**
-2. Copy your **Project URL** (format: `https://xxxxx.supabase.co`)
-3. Copy your **anon public key** (starts with `eyJhbGciOiJIUzI1NiIs...`)
-
-### 2. Run SyncSpace
-
-#### Option A: Local Setup
-
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/syncspace.git
-   cd syncspace
+<p align="center">
+Built with ❤️ using HTML, JS, Bootstrap, Supabase & Vercel
+</p>
+```

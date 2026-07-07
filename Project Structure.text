@@ -1,0 +1,7 @@
+syncspace/
+├── api/
+│   └── config.js        ← Serverless function (env vars se credentials return karega)
+├── index.html           ← Main app (setup screen hataya, auto-config)
+├── table.sql            ← Sql for database
+├── vercel.json          ← Vercel routing config
+└── README.md

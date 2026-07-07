@@ -13,38 +13,38 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
-        --bg-deep: #060910;
-        --bg-surface: #0c1017;
-        --bg-card: #131923;
-        --bg-elevated: #1a2232;
-        --bg-hover: #212d42;
-        --border: #222e42;
-        --border-light: #2c3b54;
-        --text: #e4eaf3;
-        --text-sec: #8c99ae;
-        --text-muted: #556275;
+        --bg-deep: #050810;
+        --bg-surface: #0b0f18;
+        --bg-card: #111827;
+        --bg-elevated: #182034;
+        --bg-hover: #1e2a42;
+        --border: #1f2d44;
+        --border-light: #2a3b56;
+        --text: #e6ecf5;
+        --text-sec: #8a97ad;
+        --text-muted: #526178;
         --accent: #00d4aa;
         --accent-light: #33ffd2;
         --accent-dim: #009e7e;
-        --accent-bg: rgba(0, 212, 170, 0.08);
-        --accent-border: rgba(0, 212, 170, 0.25);
+        --accent-bg: rgba(0, 212, 170, 0.07);
+        --accent-border: rgba(0, 212, 170, 0.22);
         --danger: #ff4d5e;
-        --danger-bg: rgba(255, 77, 94, 0.1);
+        --danger-bg: rgba(255, 77, 94, 0.08);
         --warning: #ffbe3d;
+        --info-blue: #4da6ff;
         --font-ui: "Space Grotesk", sans-serif;
         --font-mono: "JetBrains Mono", monospace;
         --radius: 12px;
         --radius-sm: 8px;
         --radius-xs: 6px;
         --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-        --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.5);
+        --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.55);
       }
-
       *,
       *::before,
       *::after {
@@ -52,7 +52,6 @@
         padding: 0;
         box-sizing: border-box;
       }
-
       body {
         font-family: var(--font-ui);
         background: var(--bg-deep);
@@ -61,14 +60,13 @@
         overflow-x: hidden;
         -webkit-font-smoothing: antialiased;
       }
-
       ::selection {
         background: var(--accent);
         color: var(--bg-deep);
       }
       ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+        width: 5px;
+        height: 5px;
       }
       ::-webkit-scrollbar-track {
         background: var(--bg-surface);
@@ -77,11 +75,7 @@
         background: var(--border-light);
         border-radius: 3px;
       }
-      ::-webkit-scrollbar-thumb:hover {
-        background: var(--text-muted);
-      }
 
-      /* ===== SCREENS ===== */
       .screen {
         display: none;
         min-height: 100vh;
@@ -91,68 +85,121 @@
         display: flex;
       }
 
-      /* ===== SETUP SCREEN ===== */
-      #screen-setup {
+      /* ===== LOADING ===== */
+      #screen-loading {
         align-items: center;
         justify-content: center;
-        background: var(--bg-deep);
         position: relative;
       }
-      #screen-setup::before {
+      #screen-loading::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(
+          ellipse 500px 400px at 50% 50%,
+          rgba(0, 212, 170, 0.06),
+          transparent
+        );
+        pointer-events: none;
+      }
+      .loader-content {
+        text-align: center;
+        position: relative;
+        z-index: 1;
+      }
+      .loader-spinner {
+        width: 44px;
+        height: 44px;
+        border: 3px solid var(--border);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        margin: 0 auto 1.25rem;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .loader-title {
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        margin-bottom: 0.4rem;
+      }
+      .loader-title span {
+        background: linear-gradient(135deg, var(--accent), var(--accent-light));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .loader-msg {
+        color: var(--text-muted);
+        font-size: 0.88rem;
+      }
+
+      /* ===== FALLBACK CONFIG ===== */
+      #screen-fallback {
+        align-items: center;
+        justify-content: center;
+        position: relative;
+      }
+      #screen-fallback::before {
         content: "";
         position: absolute;
         inset: 0;
         background:
           radial-gradient(
-            ellipse 600px 400px at 30% 40%,
-            rgba(0, 212, 170, 0.06),
+            ellipse 500px 400px at 40% 40%,
+            rgba(255, 77, 94, 0.05),
             transparent
           ),
           radial-gradient(
-            ellipse 500px 500px at 70% 60%,
-            rgba(0, 140, 255, 0.04),
+            ellipse 400px 400px at 60% 60%,
+            rgba(0, 212, 170, 0.04),
             transparent
           );
         pointer-events: none;
       }
-      .setup-card {
+      .fallback-card {
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        padding: 2.5rem;
+        padding: 2.25rem;
         max-width: 520px;
         width: 90%;
         position: relative;
         z-index: 1;
         box-shadow: var(--shadow-lg);
       }
-      .setup-card h2 {
+      .fallback-card h2 {
         font-weight: 700;
-        font-size: 1.6rem;
-        margin-bottom: 0.25rem;
+        font-size: 1.4rem;
+        margin-bottom: 0.2rem;
       }
-      .setup-card .subtitle {
+      .fallback-card .subtitle {
         color: var(--text-sec);
-        font-size: 0.9rem;
-        margin-bottom: 1.5rem;
+        font-size: 0.85rem;
+        margin-bottom: 1.4rem;
+        line-height: 1.5;
       }
-
       .form-label-custom {
-        font-size: 0.8rem;
+        font-size: 0.76rem;
         font-weight: 600;
         color: var(--text-sec);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 0.4rem;
+        letter-spacing: 0.06em;
+        margin-bottom: 0.35rem;
+        display: block;
       }
       .input-custom {
         background: var(--bg-elevated);
         border: 1px solid var(--border);
         color: var(--text);
         border-radius: var(--radius-sm);
-        padding: 0.7rem 1rem;
+        padding: 0.68rem 1rem;
         font-family: var(--font-mono);
-        font-size: 0.85rem;
+        font-size: 0.83rem;
         width: 100%;
         transition:
           border-color 0.2s,
@@ -166,15 +213,14 @@
       .input-custom::placeholder {
         color: var(--text-muted);
       }
-
       .btn-accent {
         background: var(--accent);
         color: var(--bg-deep);
         border: none;
         border-radius: var(--radius-sm);
-        padding: 0.75rem 1.5rem;
+        padding: 0.72rem 1.5rem;
         font-weight: 700;
-        font-size: 0.95rem;
+        font-size: 0.92rem;
         cursor: pointer;
         transition: all 0.2s;
         font-family: var(--font-ui);
@@ -183,7 +229,7 @@
       .btn-accent:hover {
         background: var(--accent-light);
         transform: translateY(-1px);
-        box-shadow: 0 4px 16px rgba(0, 212, 170, 0.3);
+        box-shadow: 0 4px 16px rgba(0, 212, 170, 0.25);
       }
       .btn-accent:active {
         transform: translateY(0);
@@ -193,52 +239,46 @@
         cursor: not-allowed;
         transform: none;
       }
-
-      .sql-instructions {
-        margin-top: 1.5rem;
-        padding: 1rem;
+      .env-hint {
+        margin-top: 1.2rem;
+        padding: 0.85rem;
         background: var(--bg-elevated);
         border-radius: var(--radius-sm);
         border: 1px solid var(--border);
+        font-size: 0.76rem;
+        color: var(--text-sec);
+        line-height: 1.6;
       }
-      .sql-instructions summary {
+      .env-hint summary {
         cursor: pointer;
         color: var(--accent);
         font-weight: 600;
-        font-size: 0.85rem;
         list-style: none;
         display: flex;
         align-items: center;
         gap: 0.5rem;
       }
-      .sql-instructions summary::before {
+      .env-hint summary::before {
         content: "\f054";
         font-family: "Font Awesome 6 Free";
         font-weight: 900;
-        font-size: 0.7rem;
+        font-size: 0.6rem;
         transition: transform 0.2s;
       }
-      .sql-instructions[open] summary::before {
+      .env-hint[open] summary::before {
         transform: rotate(90deg);
       }
-      .sql-instructions .sql-content {
-        margin-top: 0.75rem;
-        font-size: 0.78rem;
-        color: var(--text-sec);
-        line-height: 1.6;
-      }
-      .sql-instructions code {
+      .env-hint code {
         background: var(--bg-deep);
-        padding: 0.15rem 0.4rem;
+        padding: 0.12rem 0.35rem;
         border-radius: 4px;
         font-family: var(--font-mono);
-        font-size: 0.72rem;
+        font-size: 0.68rem;
+        color: var(--accent);
       }
 
       /* ===== HOME SCREEN ===== */
       #screen-home {
-        align-items: center;
-        justify-content: center;
         position: relative;
         overflow: hidden;
       }
@@ -248,42 +288,161 @@
         inset: 0;
         background:
           radial-gradient(
-            ellipse 800px 500px at 25% 30%,
-            rgba(0, 212, 170, 0.07),
+            ellipse 900px 600px at 20% 25%,
+            rgba(0, 212, 170, 0.06),
             transparent
           ),
           radial-gradient(
-            ellipse 600px 600px at 75% 70%,
-            rgba(0, 100, 255, 0.05),
-            transparent
-          ),
-          radial-gradient(
-            ellipse 400px 300px at 50% 50%,
-            rgba(0, 212, 170, 0.03),
+            ellipse 700px 700px at 80% 75%,
+            rgba(0, 100, 255, 0.04),
             transparent
           );
-        animation: bgPulse 8s ease-in-out infinite alternate;
+        animation: bgPulse 10s ease-in-out infinite alternate;
+        pointer-events: none;
       }
       @keyframes bgPulse {
         0% {
-          opacity: 0.7;
+          opacity: 0.6;
         }
         100% {
           opacity: 1;
         }
       }
 
-      .home-content {
+      .home-nav {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 2rem;
+        border-bottom: 1px solid var(--border);
+        background: rgba(11, 15, 24, 0.6);
+        backdrop-filter: blur(12px);
+      }
+      .home-nav .nav-logo {
+        font-weight: 800;
+        font-size: 1.15rem;
+        background: linear-gradient(135deg, var(--accent), var(--accent-light));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .home-nav .nav-right {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .user-count-badge {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 0.3rem 0.75rem 0.3rem 0.55rem;
+        font-size: 0.78rem;
+        color: var(--text-sec);
+      }
+      .user-count-badge .count-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        animation: pulse 2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
+      }
+      .user-count-badge .count-num {
+        font-weight: 700;
+        color: var(--accent);
+        font-family: var(--font-mono);
+      }
+
+      .nav-auth-btn {
+        border-radius: var(--radius-xs);
+        padding: 0.38rem 0.9rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: var(--font-ui);
+        border: 1px solid var(--border);
+        background: var(--bg-elevated);
+        color: var(--text-sec);
+      }
+      .nav-auth-btn:hover {
+        border-color: var(--accent-border);
+        color: var(--accent);
+      }
+      .nav-auth-btn.primary {
+        background: var(--accent);
+        color: var(--bg-deep);
+        border-color: var(--accent);
+      }
+      .nav-auth-btn.primary:hover {
+        background: var(--accent-light);
+      }
+      .nav-auth-btn.signout {
+        background: var(--danger-bg);
+        color: var(--danger);
+        border-color: rgba(255, 77, 94, 0.2);
+      }
+      .nav-auth-btn.signout:hover {
+        background: var(--danger);
+        color: #fff;
+      }
+
+      .nav-user-info {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+      }
+      .nav-user-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--accent-bg);
+        border: 2px solid var(--accent-border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .nav-user-name {
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
+      .home-body {
         position: relative;
         z-index: 1;
-        text-align: center;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
         padding: 2rem;
       }
+      .home-hero {
+        text-align: center;
+        margin-bottom: 2.5rem;
+      }
       .home-logo {
-        font-size: 3rem;
-        font-weight: 700;
-        letter-spacing: -0.03em;
-        margin-bottom: 0.25rem;
+        font-size: 3.5rem;
+        font-weight: 800;
+        letter-spacing: -0.05em;
+        margin-bottom: 0.3rem;
         background: linear-gradient(135deg, var(--accent), var(--accent-light));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
@@ -293,7 +452,50 @@
         color: var(--text-sec);
         font-size: 1.1rem;
         font-weight: 300;
+      }
+
+      .home-stats {
+        display: flex;
+        gap: 1.5rem;
         margin-bottom: 2.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .stat-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1rem 1.5rem;
+        text-align: center;
+        min-width: 150px;
+        transition: all 0.3s;
+      }
+      .stat-card:hover {
+        border-color: var(--accent-border);
+        transform: translateY(-2px);
+      }
+      .stat-card .stat-num {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: var(--accent);
+        font-family: var(--font-mono);
+        line-height: 1;
+      }
+      .stat-card .stat-label {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-top: 0.3rem;
+      }
+
+      .home-welcome {
+        margin-bottom: 1.5rem;
+        font-size: 1.1rem;
+        color: var(--text-sec);
+      }
+      .home-welcome strong {
+        color: var(--accent);
       }
 
       .action-cards {
@@ -350,26 +552,35 @@
       }
       .action-card.join-card .card-icon {
         background: rgba(0, 140, 255, 0.1);
-        color: #4da6ff;
+        color: var(--info-blue);
       }
       .action-card h3 {
-        font-size: 1.15rem;
+        font-size: 1.12rem;
         font-weight: 700;
         margin-bottom: 0.3rem;
       }
       .action-card p {
         color: var(--text-sec);
-        font-size: 0.85rem;
+        font-size: 0.84rem;
         line-height: 1.5;
+      }
+      .action-card .auth-hint {
+        margin-top: 0.75rem;
+        font-size: 0.72rem;
+        color: var(--warning);
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
       }
 
       .home-footer {
-        margin-top: 3rem;
+        margin-top: 2.5rem;
         color: var(--text-muted);
-        font-size: 0.75rem;
+        font-size: 0.7rem;
+        text-align: center;
       }
 
-      /* ===== FORM MODALS ===== */
+      /* ===== MODALS ===== */
       .modal-overlay {
         display: none;
         position: fixed;
@@ -388,10 +599,11 @@
         border: 1px solid var(--border);
         border-radius: var(--radius);
         padding: 2rem;
-        max-width: 460px;
-        width: 90%;
+        max-width: 440px;
+        width: 92%;
         box-shadow: var(--shadow-lg);
         animation: modalIn 0.25s ease-out;
+        position: relative;
       }
       @keyframes modalIn {
         from {
@@ -404,9 +616,14 @@
         }
       }
       .modal-box h3 {
-        font-size: 1.25rem;
+        font-size: 1.2rem;
         font-weight: 700;
-        margin-bottom: 1.25rem;
+        margin-bottom: 0.25rem;
+      }
+      .modal-subtitle {
+        color: var(--text-sec);
+        font-size: 0.82rem;
+        margin-bottom: 1.2rem;
       }
       .modal-close {
         position: absolute;
@@ -427,9 +644,9 @@
         background: var(--bg-deep);
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
-        padding: 0.8rem 1rem;
+        padding: 0.75rem 1rem;
         font-family: var(--font-mono);
-        font-size: 1.3rem;
+        font-size: 1.25rem;
         font-weight: 600;
         letter-spacing: 0.15em;
         color: var(--accent);
@@ -443,9 +660,9 @@
         border: 1px solid var(--border);
         color: var(--text-sec);
         border-radius: 6px;
-        padding: 0.35rem 0.7rem;
+        padding: 0.3rem 0.65rem;
         cursor: pointer;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         font-family: var(--font-ui);
         transition: all 0.2s;
       }
@@ -454,12 +671,49 @@
         color: var(--accent);
       }
 
+      .modal-switch {
+        margin-top: 1rem;
+        text-align: center;
+        font-size: 0.82rem;
+        color: var(--text-muted);
+      }
+      .modal-switch a {
+        color: var(--accent);
+        cursor: pointer;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .modal-switch a:hover {
+        text-decoration: underline;
+      }
+
+      .input-with-icon {
+        position: relative;
+      }
+      .input-with-icon .input-custom {
+        padding-right: 2.5rem;
+      }
+      .input-with-icon .toggle-pass {
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: color 0.2s;
+      }
+      .input-with-icon .toggle-pass:hover {
+        color: var(--text-sec);
+      }
+
       /* ===== WORKSPACE ===== */
       #screen-workspace {
         height: 100vh;
         overflow: hidden;
       }
-
       .ws-topbar {
         background: var(--bg-surface);
         border-bottom: 1px solid var(--border);
@@ -467,12 +721,12 @@
         height: 56px;
         display: flex;
         align-items: center;
-        gap: 1rem;
+        gap: 0.75rem;
         flex-shrink: 0;
       }
       .ws-topbar .logo-sm {
-        font-weight: 700;
-        font-size: 1.1rem;
+        font-weight: 800;
+        font-size: 1.05rem;
         background: linear-gradient(135deg, var(--accent), var(--accent-light));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
@@ -480,19 +734,19 @@
       }
       .ws-topbar .divider {
         width: 1px;
-        height: 24px;
+        height: 22px;
         background: var(--border);
       }
       .ws-session-badge {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.45rem;
         background: var(--bg-elevated);
         border: 1px solid var(--border);
         border-radius: var(--radius-xs);
-        padding: 0.3rem 0.5rem 0.3rem 0.75rem;
+        padding: 0.25rem 0.45rem 0.25rem 0.65rem;
         font-family: var(--font-mono);
-        font-size: 0.82rem;
+        font-size: 0.8rem;
         color: var(--accent);
       }
       .ws-session-badge button {
@@ -500,42 +754,48 @@
         border: none;
         color: var(--text-muted);
         cursor: pointer;
-        font-size: 0.75rem;
-        padding: 0.2rem;
+        font-size: 0.72rem;
+        padding: 0.15rem;
         transition: color 0.2s;
       }
       .ws-session-badge button:hover {
         color: var(--accent);
       }
-
+      .ws-topbar .ws-user-name {
+        font-size: 0.8rem;
+        color: var(--text-sec);
+        margin-left: auto;
+      }
+      .ws-topbar .ws-user-name i {
+        color: var(--accent);
+        margin-right: 0.25rem;
+      }
       .ws-share-btn {
         background: var(--accent-bg);
         border: 1px solid var(--accent-border);
         color: var(--accent);
         border-radius: var(--radius-xs);
-        padding: 0.35rem 0.8rem;
-        font-size: 0.8rem;
+        padding: 0.32rem 0.7rem;
+        font-size: 0.78rem;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.2s;
         font-family: var(--font-ui);
         display: flex;
         align-items: center;
-        gap: 0.4rem;
+        gap: 0.35rem;
       }
       .ws-share-btn:hover {
         background: var(--accent);
         color: var(--bg-deep);
       }
-
       .ws-leave-btn {
-        margin-left: auto;
         background: var(--danger-bg);
-        border: 1px solid rgba(255, 77, 94, 0.25);
+        border: 1px solid rgba(255, 77, 94, 0.2);
         color: var(--danger);
         border-radius: var(--radius-xs);
-        padding: 0.35rem 0.8rem;
-        font-size: 0.8rem;
+        padding: 0.32rem 0.7rem;
+        font-size: 0.78rem;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.2s;
@@ -551,8 +811,6 @@
         flex: 1;
         overflow: hidden;
       }
-
-      /* Sidebar */
       .ws-sidebar {
         width: 260px;
         min-width: 260px;
@@ -563,7 +821,7 @@
         overflow: hidden;
       }
       .ws-sidebar-header {
-        padding: 1rem;
+        padding: 0.85rem 1rem;
         border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
@@ -571,9 +829,9 @@
       }
       .ws-sidebar-header span {
         font-weight: 700;
-        font-size: 0.85rem;
+        font-size: 0.82rem;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.06em;
         color: var(--text-sec);
       }
       .ws-add-section-btn {
@@ -581,31 +839,29 @@
         border: 1px solid var(--accent-border);
         color: var(--accent);
         border-radius: 6px;
-        width: 30px;
-        height: 30px;
+        width: 28px;
+        height: 28px;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         transition: all 0.2s;
       }
       .ws-add-section-btn:hover {
         background: var(--accent);
         color: var(--bg-deep);
       }
-
       .ws-sections-list {
         flex: 1;
         overflow-y: auto;
-        padding: 0.5rem;
+        padding: 0.4rem;
       }
-
       .section-item {
         display: flex;
         align-items: center;
-        gap: 0.6rem;
-        padding: 0.65rem 0.75rem;
+        gap: 0.55rem;
+        padding: 0.6rem 0.7rem;
         border-radius: var(--radius-sm);
         cursor: pointer;
         transition: all 0.15s;
@@ -621,8 +877,8 @@
       }
       .section-item .sec-icon {
         color: var(--text-muted);
-        font-size: 0.85rem;
-        width: 18px;
+        font-size: 0.82rem;
+        width: 16px;
         text-align: center;
       }
       .section-item.active .sec-icon {
@@ -630,11 +886,18 @@
       }
       .section-item .sec-name {
         flex: 1;
-        font-size: 0.88rem;
+        font-size: 0.85rem;
         font-weight: 500;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      .section-item .sec-badge {
+        font-size: 0.62rem;
+        color: var(--text-muted);
+        background: var(--bg-elevated);
+        padding: 0.08rem 0.35rem;
+        border-radius: 8px;
       }
       .section-item .sec-delete {
         opacity: 0;
@@ -642,8 +905,8 @@
         border: none;
         color: var(--text-muted);
         cursor: pointer;
-        font-size: 0.75rem;
-        padding: 0.15rem;
+        font-size: 0.72rem;
+        padding: 0.12rem;
         transition: all 0.15s;
       }
       .section-item:hover .sec-delete {
@@ -652,25 +915,33 @@
       .section-item .sec-delete:hover {
         color: var(--danger);
       }
-
       .ws-sidebar-footer {
-        padding: 0.75rem;
+        padding: 0.65rem;
         border-top: 1px solid var(--border);
-        font-size: 0.72rem;
+        font-size: 0.68rem;
         color: var(--text-muted);
         text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+      }
+      .ws-sidebar-footer .live-dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+        animation: pulse 2s ease-in-out infinite;
       }
 
-      /* Main Content */
       .ws-main {
         flex: 1;
         display: flex;
         flex-direction: column;
         overflow: hidden;
       }
-
       .ws-section-header {
-        padding: 1rem 1.5rem;
+        padding: 0.85rem 1.5rem;
         border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
@@ -678,13 +949,11 @@
         background: var(--bg-surface);
       }
       .ws-section-name {
-        font-size: 1.15rem;
+        font-size: 1.1rem;
         font-weight: 700;
       }
-
       .ws-tabs {
         display: flex;
-        gap: 0;
         margin-left: auto;
         background: var(--bg-elevated);
         border-radius: var(--radius-sm);
@@ -692,9 +961,9 @@
         border: 1px solid var(--border);
       }
       .ws-tab {
-        padding: 0.35rem 1rem;
+        padding: 0.32rem 0.9rem;
         border-radius: 6px;
-        font-size: 0.82rem;
+        font-size: 0.8rem;
         font-weight: 600;
         cursor: pointer;
         transition: all 0.2s;
@@ -711,55 +980,56 @@
         color: var(--text);
       }
 
-      /* Text Panel */
       .ws-text-panel {
         flex: 1;
-        display: flex;
+        display: none;
         flex-direction: column;
         overflow: hidden;
       }
+      .ws-text-panel.active {
+        display: flex;
+      }
       .ws-text-toolbar {
-        padding: 0.5rem 1.5rem;
+        padding: 0.45rem 1.5rem;
         border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.45rem;
         background: var(--bg-surface);
       }
-      .ws-text-toolbar .toolbar-btn {
+      .toolbar-btn {
         background: var(--bg-elevated);
         border: 1px solid var(--border);
         color: var(--text-sec);
         border-radius: 6px;
-        padding: 0.35rem 0.7rem;
-        font-size: 0.78rem;
+        padding: 0.32rem 0.65rem;
+        font-size: 0.76rem;
         font-weight: 500;
         cursor: pointer;
         transition: all 0.2s;
         font-family: var(--font-ui);
         display: flex;
         align-items: center;
-        gap: 0.35rem;
+        gap: 0.3rem;
       }
-      .ws-text-toolbar .toolbar-btn:hover {
+      .toolbar-btn:hover {
         border-color: var(--accent-border);
         color: var(--accent);
       }
-      .ws-text-toolbar .save-indicator {
+      .save-indicator {
         margin-left: auto;
-        font-size: 0.75rem;
+        font-size: 0.73rem;
         color: var(--text-muted);
         display: flex;
         align-items: center;
-        gap: 0.35rem;
+        gap: 0.3rem;
       }
-      .ws-text-toolbar .save-indicator.saving {
+      .save-indicator.saving {
         color: var(--warning);
       }
-      .ws-text-toolbar .save-indicator.saved {
+      .save-indicator.saved {
         color: var(--accent);
       }
-
       .ws-textarea {
         flex: 1;
         width: 100%;
@@ -768,26 +1038,24 @@
         outline: none;
         background: var(--bg-deep);
         color: var(--text);
-        padding: 1.25rem 1.5rem;
+        padding: 1.2rem 1.5rem;
         font-family: var(--font-ui);
-        font-size: 0.95rem;
+        font-size: 0.92rem;
         line-height: 1.7;
       }
       .ws-textarea::placeholder {
         color: var(--text-muted);
       }
-
       .ws-text-footer {
-        padding: 0.4rem 1.5rem;
+        padding: 0.35rem 1.5rem;
         border-top: 1px solid var(--border);
         background: var(--bg-surface);
-        font-size: 0.72rem;
+        font-size: 0.7rem;
         color: var(--text-muted);
         display: flex;
         justify-content: space-between;
       }
 
-      /* Files Panel */
       .ws-files-panel {
         flex: 1;
         display: none;
@@ -797,13 +1065,9 @@
       .ws-files-panel.active {
         display: flex;
       }
-      .ws-text-panel.active {
-        display: flex;
-      }
-
       .ws-upload-area {
-        margin: 1.5rem;
-        padding: 2rem;
+        margin: 1.25rem;
+        padding: 1.75rem;
         border: 2px dashed var(--border);
         border-radius: var(--radius);
         text-align: center;
@@ -816,36 +1080,37 @@
         background: var(--accent-bg);
       }
       .ws-upload-area i {
-        font-size: 2rem;
+        font-size: 1.8rem;
         color: var(--text-muted);
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.4rem;
+        display: block;
       }
       .ws-upload-area:hover i {
         color: var(--accent);
       }
       .ws-upload-area p {
         color: var(--text-sec);
-        font-size: 0.85rem;
+        font-size: 0.82rem;
+        margin-bottom: 0.2rem;
       }
       .ws-upload-area small {
         color: var(--text-muted);
-        font-size: 0.75rem;
+        font-size: 0.72rem;
       }
-
       .ws-files-list {
         flex: 1;
         overflow-y: auto;
-        padding: 0 1.5rem 1.5rem;
+        padding: 0 1.25rem 1.25rem;
       }
       .file-item {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
-        padding: 0.7rem 1rem;
+        gap: 0.7rem;
+        padding: 0.65rem 0.9rem;
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.4rem;
         transition: all 0.2s;
       }
       .file-item:hover {
@@ -853,13 +1118,13 @@
         background: var(--bg-elevated);
       }
       .file-item .file-icon {
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
         border-radius: 8px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
       }
       .file-icon.img-icon {
         background: rgba(255, 107, 129, 0.1);
@@ -882,32 +1147,32 @@
         min-width: 0;
       }
       .file-item .file-name {
-        font-size: 0.85rem;
+        font-size: 0.82rem;
         font-weight: 600;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .file-item .file-meta {
-        font-size: 0.72rem;
+        font-size: 0.7rem;
         color: var(--text-muted);
       }
       .file-item .file-actions {
         display: flex;
-        gap: 0.35rem;
+        gap: 0.3rem;
       }
       .file-item .file-actions button {
         background: var(--bg-elevated);
         border: 1px solid var(--border);
         color: var(--text-sec);
         border-radius: 6px;
-        width: 30px;
-        height: 30px;
+        width: 28px;
+        height: 28px;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         transition: all 0.2s;
       }
       .file-item .file-actions button:hover {
@@ -929,30 +1194,39 @@
         padding: 3rem;
       }
       .empty-state i {
-        font-size: 2.5rem;
-        margin-bottom: 0.75rem;
+        font-size: 2.2rem;
+        margin-bottom: 0.6rem;
         opacity: 0.5;
       }
       .empty-state p {
-        font-size: 0.9rem;
+        font-size: 0.88rem;
       }
 
-      /* Mobile sidebar toggle */
       .ws-sidebar-toggle {
         display: none;
         background: var(--bg-elevated);
         border: 1px solid var(--border);
         color: var(--text-sec);
         border-radius: 6px;
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
+      }
+      .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        top: 56px;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 99;
+      }
+      .sidebar-backdrop.active {
+        display: block;
       }
 
-      /* Toast */
       #toast-container {
         position: fixed;
         bottom: 1.5rem;
@@ -960,21 +1234,21 @@
         z-index: 9999;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: 0.4rem;
       }
       .toast-item {
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-radius: var(--radius-sm);
-        padding: 0.75rem 1.25rem;
-        font-size: 0.85rem;
+        padding: 0.7rem 1.15rem;
+        font-size: 0.82rem;
         display: flex;
         align-items: center;
-        gap: 0.6rem;
+        gap: 0.5rem;
         box-shadow: var(--shadow);
         animation: toastIn 0.3s ease-out;
-        min-width: 250px;
-        max-width: 400px;
+        min-width: 240px;
+        max-width: 380px;
       }
       .toast-item.success {
         border-left: 3px solid var(--accent);
@@ -989,10 +1263,10 @@
         color: var(--danger);
       }
       .toast-item.info {
-        border-left: 3px solid #4da6ff;
+        border-left: 3px solid var(--info-blue);
       }
       .toast-item.info i {
-        color: #4da6ff;
+        color: var(--info-blue);
       }
       @keyframes toastIn {
         from {
@@ -1014,64 +1288,17 @@
         }
       }
 
-      /* Loading spinner */
       .spinner-sm {
-        width: 16px;
-        height: 16px;
+        width: 15px;
+        height: 15px;
         border: 2px solid var(--border);
         border-top-color: var(--accent);
         border-radius: 50%;
         animation: spin 0.6s linear infinite;
         display: inline-block;
-      }
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
+        vertical-align: middle;
       }
 
-      /* Responsive */
-      @media (max-width: 768px) {
-        .ws-sidebar-toggle {
-          display: flex;
-        }
-        .ws-sidebar {
-          position: fixed;
-          left: -280px;
-          top: 56px;
-          bottom: 0;
-          z-index: 100;
-          transition: left 0.3s ease;
-          box-shadow: var(--shadow-lg);
-        }
-        .ws-sidebar.open {
-          left: 0;
-        }
-        .sidebar-backdrop {
-          display: none;
-          position: fixed;
-          inset: 0;
-          top: 56px;
-          background: rgba(0, 0, 0, 0.5);
-          z-index: 99;
-        }
-        .sidebar-backdrop.active {
-          display: block;
-        }
-        .action-cards {
-          flex-direction: column;
-          align-items: center;
-        }
-        .action-card {
-          width: 100%;
-          max-width: 360px;
-        }
-        .home-logo {
-          font-size: 2.2rem;
-        }
-      }
-
-      /* Particles */
       .particles-container {
         position: absolute;
         inset: 0;
@@ -1092,80 +1319,116 @@
           transform: translateY(100vh) scale(0);
         }
         10% {
-          opacity: 0.6;
+          opacity: 0.45;
         }
         90% {
-          opacity: 0.1;
+          opacity: 0.04;
         }
         100% {
           opacity: 0;
           transform: translateY(-10vh) scale(1);
         }
       }
+
+      @media (max-width: 768px) {
+        .ws-sidebar-toggle {
+          display: flex;
+        }
+        .ws-sidebar {
+          position: fixed;
+          left: -280px;
+          top: 56px;
+          bottom: 0;
+          z-index: 100;
+          transition: left 0.3s ease;
+          box-shadow: var(--shadow-lg);
+        }
+        .ws-sidebar.open {
+          left: 0;
+        }
+        .action-cards {
+          flex-direction: column;
+          align-items: center;
+        }
+        .action-card {
+          width: 100%;
+          max-width: 360px;
+        }
+        .home-logo {
+          font-size: 2.4rem;
+        }
+        .home-nav {
+          padding: 0.75rem 1rem;
+        }
+        .home-stats {
+          gap: 0.75rem;
+        }
+        .stat-card {
+          min-width: 120px;
+          padding: 0.75rem 1rem;
+        }
+        .stat-card .stat-num {
+          font-size: 1.4rem;
+        }
+      }
     </style>
   </head>
   <body>
-    <!-- ====== SETUP SCREEN ====== -->
-    <div id="screen-setup" class="screen active">
-      <div class="particles-container" id="setup-particles"></div>
-      <div class="setup-card">
-        <h2>Configure SyncSpace</h2>
-        <p class="subtitle">Connect your Supabase project to get started</p>
+    <!-- ====== LOADING ====== -->
+    <div id="screen-loading" class="screen active">
+      <div class="particles-container" id="loading-particles"></div>
+      <div class="loader-content">
+        <div class="loader-spinner"></div>
+        <div class="loader-title"><span>SyncSpace</span></div>
+        <div class="loader-msg" id="loading-msg">Connecting to server...</div>
+      </div>
+    </div>
 
-        <div class="mb-3">
-          <label class="form-label-custom">Supabase Project URL</label>
-          <input
+    <!-- ====== FALLBACK CONFIG ====== -->
+    <div id="screen-fallback" class="screen">
+      <div class="particles-container" id="fallback-particles"></div>
+      <div class="fallback-card">
+        <h2>Manual Configuration</h2>
+        <p class="subtitle">
+          Server credentials not found. Enter your Supabase details below.
+        </p>
+        <div style="margin-bottom: 0.85rem">
+          <label class="form-label-custom">Supabase URL</label
+          ><input
             type="text"
-            id="input-supabase-url"
+            id="input-url"
             class="input-custom"
             placeholder="https://xxxxx.supabase.co"
           />
         </div>
-        <div class="mb-3">
-          <label class="form-label-custom">Supabase Anon Key</label>
-          <input
+        <div style="margin-bottom: 1.1rem">
+          <label class="form-label-custom">Anon Key</label
+          ><input
             type="text"
-            id="input-supabase-key"
+            id="input-key"
             class="input-custom"
             placeholder="eyJhbGciOiJIUzI1NiIs..."
           />
         </div>
-        <button id="btn-connect" class="btn-accent" onclick="connectSupabase()">
-          <span id="btn-connect-text">Connect & Continue</span>
+        <button
+          class="btn-accent"
+          id="btn-manual-connect"
+          onclick="manualConnect()"
+        >
+          Connect Manually
         </button>
-
-        <details class="sql-instructions">
-          <summary>Setup Instructions</summary>
-          <div class="sql-content">
+        <details class="env-hint">
+          <summary>Vercel Environment Variable Setup</summary>
+          <div style="margin-top: 0.6rem">
             <p>
-              <strong>1.</strong> Go to
-              <a
-                href="https://supabase.com"
-                target="_blank"
-                style="color: var(--accent)"
-                >supabase.com</a
-              >
-              and create a new project
+              1. Go to Vercel → Project →
+              <strong>Settings → Environment Variables</strong>
             </p>
             <p>
-              <strong>2.</strong> Go to
-              <strong>Project Settings → API</strong> to find your URL and Anon
-              Key
+              2. Add: <code>SUPABASE_URL</code> and
+              <code>SUPABASE_ANON_KEY</code>
             </p>
-            <p>
-              <strong>3.</strong> Go to <strong>SQL Editor</strong> and run the
-              setup SQL (provided in README)
-            </p>
-            <p>
-              <strong>4.</strong> Go to
-              <strong>Database → Replication</strong> and enable realtime for
-              <code>sections</code>, <code>texts</code>,
-              <code>files</code> tables
-            </p>
-            <p style="margin-top: 0.5rem">
-              <strong>Required tables:</strong> <code>sessions</code>,
-              <code>sections</code>, <code>texts</code>, <code>files</code>
-            </p>
+            <p>3. Redeploy the project</p>
           </div>
         </details>
       </div>
@@ -1174,21 +1437,80 @@
     <!-- ====== HOME SCREEN ====== -->
     <div id="screen-home" class="screen">
       <div class="particles-container" id="home-particles"></div>
-      <div class="home-content">
-        <div class="home-logo">SyncSpace</div>
-        <p class="home-tagline">
-          Real-time collaboration sessions. Create, share, collaborate.
-        </p>
+
+      <!-- Navigation Bar -->
+      <div class="home-nav">
+        <span class="nav-logo">SyncSpace</span>
+        <div class="nav-right">
+          <div class="user-count-badge">
+            <span class="count-dot"></span>
+            <span class="count-num" id="nav-user-count">0</span>
+            <span>users</span>
+          </div>
+          <!-- Guest buttons -->
+          <div id="nav-guest-btns">
+            <button class="nav-auth-btn" onclick="showModal('modal-signin')">
+              Sign In
+            </button>
+            <button
+              class="nav-auth-btn primary"
+              onclick="showModal('modal-signup')"
+            >
+              Sign Up
+            </button>
+          </div>
+          <!-- Logged in user -->
+          <div id="nav-user-btns" style="display: none" class="nav-user-info">
+            <div class="nav-user-avatar" id="nav-avatar">?</div>
+            <span class="nav-user-name" id="nav-username">User</span>
+            <button class="nav-auth-btn signout" onclick="signOut()">
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Home Body -->
+      <div class="home-body">
+        <div class="home-hero">
+          <div class="home-logo">SyncSpace</div>
+          <p class="home-tagline">
+            Real-time collaboration sessions. Create, share, collaborate.
+          </p>
+        </div>
+
+        <!-- Stats -->
+        <div class="home-stats">
+          <div class="stat-card">
+            <div class="stat-num" id="stat-users">0</div>
+            <div class="stat-label">Registered Users</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" id="stat-sessions">0</div>
+            <div class="stat-label">Active Sessions</div>
+          </div>
+        </div>
+
+        <!-- Welcome message (logged in) -->
+        <div class="home-welcome" id="home-welcome" style="display: none">
+          Welcome back, <strong id="home-welcome-name">User</strong>! Ready to
+          collaborate?
+        </div>
+
+        <!-- Action Cards -->
         <div class="action-cards">
-          <div class="action-card create-card" onclick="showCreateModal()">
+          <div class="action-card create-card" onclick="handleCreateSession()">
             <div class="card-icon"><i class="fas fa-plus"></i></div>
             <h3>Create Session</h3>
             <p>
               Start a new collaboration session and invite others with the
               session ID and password.
             </p>
+            <div class="auth-hint" id="create-auth-hint" style="display: none">
+              <i class="fas fa-lock"></i> Sign up required
+            </div>
           </div>
-          <div class="action-card join-card" onclick="showJoinModal()">
+          <div class="action-card join-card" onclick="handleJoinSession()">
             <div class="card-icon">
               <i class="fas fa-arrow-right-to-bracket"></i>
             </div>
@@ -1197,26 +1519,138 @@
               Enter a session ID and password shared by someone to join their
               collaboration space.
             </p>
+            <div class="auth-hint" id="join-auth-hint" style="display: none">
+              <i class="fas fa-lock"></i> Sign in required
+            </div>
           </div>
         </div>
+
         <div class="home-footer">
-          <i class="fas fa-database" style="margin-right: 0.3rem"></i> Powered
-          by Supabase &nbsp;|&nbsp; <span id="config-status"></span>
-          <button
-            onclick="resetConfig()"
-            style="
-              background: none;
-              border: none;
-              color: var(--text-muted);
-              cursor: pointer;
-              text-decoration: underline;
-              font-size: 0.75rem;
-              font-family: var(--font-ui);
-              margin-left: 0.5rem;
+          Secured with environment variables &nbsp;&bull;&nbsp; Powered by
+          Supabase
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== SIGN UP MODAL ====== -->
+    <div
+      id="modal-signup"
+      class="modal-overlay"
+      onclick="closeModalOutside(event, 'modal-signup')"
+    >
+      <div class="modal-box">
+        <button class="modal-close" onclick="closeModal('modal-signup')">
+          <i class="fas fa-xmark"></i>
+        </button>
+        <h3>Create Your Account</h3>
+        <p class="modal-subtitle">
+          Sign up to start creating and joining collaboration sessions
+        </p>
+        <div style="margin-bottom: 0.85rem">
+          <label class="form-label-custom">Full Name</label>
+          <input
+            type="text"
+            id="input-signup-name"
+            class="input-custom"
+            placeholder="Enter your name"
+          />
+        </div>
+        <div style="margin-bottom: 0.85rem">
+          <label class="form-label-custom">User ID</label>
+          <input
+            type="text"
+            id="input-signup-uid"
+            class="input-custom"
+            placeholder="Choose a unique user ID"
+            style="text-transform: lowercase"
+          />
+        </div>
+        <div style="margin-bottom: 1.1rem">
+          <label class="form-label-custom">Password</label>
+          <div class="input-with-icon">
+            <input
+              type="password"
+              id="input-signup-pass"
+              class="input-custom"
+              placeholder="Min 4 characters"
+            />
+            <button
+              class="toggle-pass"
+              onclick="togglePassVis('input-signup-pass', this)"
+            >
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <button class="btn-accent" onclick="signUp()" id="btn-signup">
+          Sign Up
+        </button>
+        <div class="modal-switch">
+          Already have an account?
+          <a
+            onclick="
+              closeModal('modal-signup');
+              showModal('modal-signin');
             "
+            >Sign In</a
           >
-            Reset Config
-          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== SIGN IN MODAL ====== -->
+    <div
+      id="modal-signin"
+      class="modal-overlay"
+      onclick="closeModalOutside(event, 'modal-signin')"
+    >
+      <div class="modal-box">
+        <button class="modal-close" onclick="closeModal('modal-signin')">
+          <i class="fas fa-xmark"></i>
+        </button>
+        <h3>Welcome Back</h3>
+        <p class="modal-subtitle">
+          Sign in to your account to continue collaborating
+        </p>
+        <div style="margin-bottom: 0.85rem">
+          <label class="form-label-custom">User ID</label>
+          <input
+            type="text"
+            id="input-signin-uid"
+            class="input-custom"
+            placeholder="Enter your user ID"
+            style="text-transform: lowercase"
+          />
+        </div>
+        <div style="margin-bottom: 1.1rem">
+          <label class="form-label-custom">Password</label>
+          <div class="input-with-icon">
+            <input
+              type="password"
+              id="input-signin-pass"
+              class="input-custom"
+              placeholder="Enter your password"
+            />
+            <button
+              class="toggle-pass"
+              onclick="togglePassVis('input-signin-pass', this)"
+            >
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+        </div>
+        <button class="btn-accent" onclick="signIn()" id="btn-signin">
+          Sign In
+        </button>
+        <div class="modal-switch">
+          Don't have an account?
+          <a
+            onclick="
+              closeModal('modal-signin');
+              showModal('modal-signup');
+            "
+            >Sign Up</a
+          >
         </div>
       </div>
     </div>
@@ -1227,12 +1661,15 @@
       class="modal-overlay"
       onclick="closeModalOutside(event, 'modal-create')"
     >
-      <div class="modal-box" style="position: relative">
+      <div class="modal-box">
         <button class="modal-close" onclick="closeModal('modal-create')">
           <i class="fas fa-xmark"></i>
         </button>
         <h3>Create New Session</h3>
-        <div class="mb-3">
+        <p class="modal-subtitle">
+          Share the session ID and password with your collaborators
+        </p>
+        <div style="margin-bottom: 0.85rem">
           <label class="form-label-custom">Session ID (Auto-generated)</label>
           <div class="session-id-display">
             <span id="generated-id">------</span>
@@ -1248,29 +1685,18 @@
             </button>
           </div>
         </div>
-        <div class="mb-3">
+        <div style="margin-bottom: 1.1rem">
           <label class="form-label-custom">Session Password</label>
-          <div style="position: relative">
+          <div class="input-with-icon">
             <input
               type="password"
               id="input-create-pass"
               class="input-custom"
-              placeholder="Enter a password"
-              style="padding-right: 2.5rem"
+              placeholder="Min 3 characters"
             />
             <button
+              class="toggle-pass"
               onclick="togglePassVis('input-create-pass', this)"
-              style="
-                position: absolute;
-                right: 0.75rem;
-                top: 50%;
-                transform: translateY(-50%);
-                background: none;
-                border: none;
-                color: var(--text-muted);
-                cursor: pointer;
-                font-size: 0.85rem;
-              "
             >
               <i class="fas fa-eye"></i>
             </button>
@@ -1292,44 +1718,36 @@
       class="modal-overlay"
       onclick="closeModalOutside(event, 'modal-join')"
     >
-      <div class="modal-box" style="position: relative">
+      <div class="modal-box">
         <button class="modal-close" onclick="closeModal('modal-join')">
           <i class="fas fa-xmark"></i>
         </button>
         <h3>Join Session</h3>
-        <div class="mb-3">
+        <p class="modal-subtitle">
+          Enter the session details shared by the session creator
+        </p>
+        <div style="margin-bottom: 0.85rem">
           <label class="form-label-custom">Session ID</label>
           <input
             type="text"
             id="input-join-id"
             class="input-custom"
-            placeholder="Enter session ID"
-            style="text-transform: uppercase; letter-spacing: 0.1em"
+            placeholder="Enter 6-digit ID"
+            style="text-transform: uppercase; letter-spacing: 0.12em"
           />
         </div>
-        <div class="mb-3">
+        <div style="margin-bottom: 1.1rem">
           <label class="form-label-custom">Password</label>
-          <div style="position: relative">
+          <div class="input-with-icon">
             <input
               type="password"
               id="input-join-pass"
               class="input-custom"
               placeholder="Enter session password"
-              style="padding-right: 2.5rem"
             />
             <button
+              class="toggle-pass"
               onclick="togglePassVis('input-join-pass', this)"
-              style="
-                position: absolute;
-                right: 0.75rem;
-                top: 50%;
-                transform: translateY(-50%);
-                background: none;
-                border: none;
-                color: var(--text-muted);
-                cursor: pointer;
-                font-size: 0.85rem;
-              "
             >
               <i class="fas fa-eye"></i>
             </button>
@@ -1351,12 +1769,15 @@
       class="modal-overlay"
       onclick="closeModalOutside(event, 'modal-section')"
     >
-      <div class="modal-box" style="position: relative">
+      <div class="modal-box">
         <button class="modal-close" onclick="closeModal('modal-section')">
           <i class="fas fa-xmark"></i>
         </button>
         <h3>New Section</h3>
-        <div class="mb-3">
+        <p class="modal-subtitle">
+          Create a new section to organize your content
+        </p>
+        <div style="margin-bottom: 1.1rem">
           <label class="form-label-custom">Section Name</label>
           <input
             type="text"
@@ -1372,9 +1793,8 @@
       </div>
     </div>
 
-    <!-- ====== WORKSPACE SCREEN ====== -->
+    <!-- ====== WORKSPACE ====== -->
     <div id="screen-workspace" class="screen">
-      <!-- Topbar -->
       <div class="ws-topbar">
         <button class="ws-sidebar-toggle" onclick="toggleSidebar()">
           <i class="fas fa-bars"></i>
@@ -1384,7 +1804,7 @@
         <div class="ws-session-badge">
           <i
             class="fas fa-circle"
-            style="font-size: 0.45rem; color: var(--accent)"
+            style="font-size: 0.4rem; color: var(--accent)"
           ></i>
           <span id="ws-session-id">------</span>
           <button
@@ -1394,23 +1814,22 @@
             <i class="fas fa-copy"></i>
           </button>
         </div>
+        <span class="ws-user-name" id="ws-user-display"
+          ><i class="fas fa-user"></i> User</span
+        >
         <button class="ws-share-btn" onclick="shareLink()">
-          <i class="fas fa-share-nodes"></i> Share Link
+          <i class="fas fa-share-nodes"></i> Share
         </button>
         <button class="ws-leave-btn" onclick="leaveSession()">
           <i class="fas fa-right-from-bracket"></i> Leave
         </button>
       </div>
-
-      <!-- Body -->
       <div class="ws-body">
         <div
           class="sidebar-backdrop"
           id="sidebar-backdrop"
           onclick="toggleSidebar()"
         ></div>
-
-        <!-- Sidebar -->
         <div class="ws-sidebar" id="ws-sidebar">
           <div class="ws-sidebar-header">
             <span>Sections</span>
@@ -1422,24 +1841,16 @@
               <i class="fas fa-plus"></i>
             </button>
           </div>
-          <div class="ws-sections-list" id="sections-list">
-            <!-- Sections render here -->
-          </div>
+          <div class="ws-sections-list" id="sections-list"></div>
           <div class="ws-sidebar-footer">
-            <i class="fas fa-bolt" style="color: var(--accent)"></i> Real-time
-            sync active
+            <span class="live-dot"></span> Real-time sync active
           </div>
         </div>
-
-        <!-- Main Content -->
         <div class="ws-main" id="ws-main">
           <div class="empty-state" id="no-section-state">
             <i class="fas fa-layer-group"></i>
-            <p>
-              No section selected. Create or select a section to get started.
-            </p>
+            <p>No section selected. Create or select one to start.</p>
           </div>
-
           <div
             id="section-content"
             style="
@@ -1449,7 +1860,6 @@
               overflow: hidden;
             "
           >
-            <!-- Section Header -->
             <div class="ws-section-header">
               <span class="ws-section-name" id="ws-active-section-name"
                 >Section</span
@@ -1460,7 +1870,10 @@
                   onclick="switchTab('text')"
                   id="tab-text"
                 >
-                  <i class="fas fa-file-lines" style="margin-right: 0.3rem"></i>
+                  <i
+                    class="fas fa-file-lines"
+                    style="margin-right: 0.25rem"
+                  ></i>
                   Text
                 </button>
                 <button
@@ -1468,13 +1881,11 @@
                   onclick="switchTab('files')"
                   id="tab-files"
                 >
-                  <i class="fas fa-paperclip" style="margin-right: 0.3rem"></i>
+                  <i class="fas fa-paperclip" style="margin-right: 0.25rem"></i>
                   Files
                 </button>
               </div>
             </div>
-
-            <!-- Text Panel -->
             <div class="ws-text-panel active" id="panel-text">
               <div class="ws-text-toolbar">
                 <button class="toolbar-btn" onclick="copyAllText()">
@@ -1497,12 +1908,10 @@
                 oninput="onTextInput()"
               ></textarea>
               <div class="ws-text-footer">
-                <span id="char-count">0 characters</span>
-                <span id="word-count">0 words</span>
+                <span id="char-count">0 characters</span
+                ><span id="word-count">0 words</span>
               </div>
             </div>
-
-            <!-- Files Panel -->
             <div class="ws-files-panel" id="panel-files">
               <div
                 class="ws-upload-area"
@@ -1510,7 +1919,7 @@
                 onclick="document.getElementById('file-input').click()"
               >
                 <i class="fas fa-cloud-arrow-up"></i>
-                <p>Click to upload or drag & drop files here</p>
+                <p>Click to upload or drag & drop files</p>
                 <small>Max 2MB per file</small>
               </div>
               <input
@@ -1520,139 +1929,425 @@
                 multiple
                 onchange="handleFileUpload(this.files)"
               />
-              <div class="ws-files-list" id="files-list">
-                <!-- Files render here -->
-              </div>
+              <div class="ws-files-list" id="files-list"></div>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Toast Container -->
     <div id="toast-container"></div>
 
-    <!-- ====== JAVASCRIPT ====== -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      // ============================================
-      // APPLICATION STATE
-      // ============================================
+      /* ============================================
+   APPLICATION STATE
+   ============================================ */
       const state = {
+        user: null, // { userId, name } from localStorage/DB
         sessionId: null,
         sectionId: null,
         sections: [],
-        texts: {}, // sectionId -> content string
-        files: {}, // sectionId -> [file objects]
+        texts: {},
+        files: {},
         isTyping: false,
         activeTab: "text",
         subscriptions: [],
         debounceTimer: null,
-        saveStatus: "saved", // 'saving' | 'saved'
+        pendingAction: null, // 'create' or 'join' — after auth, continue this action
       };
+      let db = null;
 
-      let db = null; // Supabase client
+      /* ============================================
+   INITIALIZATION
+   ============================================ */
+      document.addEventListener("DOMContentLoaded", async () => {
+        createParticles("loading-particles", 12);
+        createParticles("fallback-particles", 12);
+        createParticles("home-particles", 18);
 
-      // ============================================
-      // INITIALIZATION
-      // ============================================
-      document.addEventListener("DOMContentLoaded", () => {
-        createParticles("setup-particles", 15);
-        createParticles("home-particles", 20);
-
-        // Check saved config
-        const savedUrl = localStorage.getItem("ss_url");
-        const savedKey = localStorage.getItem("ss_key");
-
-        if (savedUrl && savedKey) {
-          document.getElementById("input-supabase-url").value = savedUrl;
-          document.getElementById("input-supabase-key").value = savedKey;
+        // Drag & drop
+        const ua = document.getElementById("upload-area");
+        if (ua) {
+          ua.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            ua.classList.add("dragover");
+          });
+          ua.addEventListener("dragleave", () =>
+            ua.classList.remove("dragover"),
+          );
+          ua.addEventListener("drop", (e) => {
+            e.preventDefault();
+            ua.classList.remove("dragover");
+            if (e.dataTransfer.files.length)
+              handleFileUpload(e.dataTransfer.files);
+          });
         }
 
-        // URL param check (join link)
-        const params = new URLSearchParams(window.location.search);
-        const joinParam = params.get("join");
-        if (joinParam && savedUrl && savedKey) {
-          initSupabase(savedUrl, savedKey);
-          showScreen("home");
-          setTimeout(() => {
-            showJoinModal();
-            document.getElementById("input-join-id").value =
-              joinParam.toUpperCase();
-          }, 500);
-        }
+        await initApp();
       });
 
-      // ============================================
-      // SUPABASE CONNECTION
-      // ============================================
+      async function initApp() {
+        const msgEl = document.getElementById("loading-msg");
+        msgEl.textContent = "Fetching configuration...";
+
+        try {
+          const res = await fetch("/api/config");
+          if (!res.ok) throw new Error("API " + res.status);
+          const config = await res.json();
+
+          if (
+            config.configured &&
+            config.supabaseUrl &&
+            config.supabaseAnonKey
+          ) {
+            msgEl.textContent = "Connecting to Supabase...";
+            initSupabase(config.supabaseUrl, config.supabaseAnonKey);
+            const { error } = await db.from("sessions").select("id").limit(1);
+            if (error) throw error;
+
+            msgEl.textContent = "Connected!";
+            await enterHomeScreen();
+            return;
+          }
+        } catch (err) {
+          console.warn("API config failed:", err.message);
+        }
+
+        // Fallback: localStorage config
+        const savedUrl = localStorage.getItem("ss_url");
+        const savedKey = localStorage.getItem("ss_key");
+        if (savedUrl && savedKey) {
+          try {
+            initSupabase(savedUrl, savedKey);
+            const { error } = await db.from("sessions").select("id").limit(1);
+            if (!error) {
+              await enterHomeScreen();
+              return;
+            }
+          } catch (e) {
+            console.warn("Saved config invalid");
+          }
+        }
+
+        // Show fallback config screen
+        showScreen("fallback");
+      }
+
+      async function manualConnect() {
+        const url = document.getElementById("input-url").value.trim();
+        const key = document.getElementById("input-key").value.trim();
+        if (!url || !key) {
+          showToast("Enter both URL and Key", "error");
+          return;
+        }
+
+        const btn = document.getElementById("btn-manual-connect");
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-sm"></span> Connecting...';
+
+        try {
+          initSupabase(url, key);
+          const { error } = await db.from("sessions").select("id").limit(1);
+          if (error) throw error;
+          localStorage.setItem("ss_url", url);
+          localStorage.setItem("ss_key", key);
+          showToast("Connected!", "success");
+          await enterHomeScreen();
+        } catch (err) {
+          showToast("Connection failed", "error");
+          db = null;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Connect Manually";
+        }
+      }
+
       function initSupabase(url, key) {
         db = window.supabase.createClient(url, key);
       }
 
-      async function connectSupabase() {
-        const url = document.getElementById("input-supabase-url").value.trim();
-        const key = document.getElementById("input-supabase-key").value.trim();
+      /* ============================================
+   HOME SCREEN SETUP
+   ============================================ */
+      async function enterHomeScreen() {
+        showScreen("home");
 
-        if (!url || !key) {
-          showToast("Please enter both URL and Anon Key", "error");
+        // Check localStorage for saved user
+        const savedUser = localStorage.getItem("ss_user");
+        if (savedUser) {
+          try {
+            const parsed = JSON.parse(savedUser);
+            // Verify user still exists in DB
+            const { data, error } = await db
+              .from("users")
+              .select("user_id, name")
+              .eq("user_id", parsed.userId)
+              .single();
+            if (data && !error) {
+              state.user = { userId: data.user_id, name: data.name };
+            } else {
+              localStorage.removeItem("ss_user");
+            }
+          } catch (e) {
+            localStorage.removeItem("ss_user");
+          }
+        }
+
+        updateHomeUI();
+        await loadStats();
+
+        // URL param: join link
+        const params = new URLSearchParams(window.location.search);
+        const joinParam = params.get("join");
+        if (joinParam) {
+          setTimeout(() => {
+            if (!state.user) {
+              state.pendingAction = "join";
+              showToast("Please sign in to join a session", "info");
+              showModal("modal-signin");
+              document.getElementById("input-join-id") &&
+                (document.getElementById("input-join-id").value =
+                  joinParam.toUpperCase());
+            } else {
+              showJoinModal();
+              document.getElementById("input-join-id").value =
+                joinParam.toUpperCase();
+            }
+          }, 600);
+        }
+      }
+
+      function updateHomeUI() {
+        const guestBtns = document.getElementById("nav-guest-btns");
+        const userBtns = document.getElementById("nav-user-btns");
+        const welcomeEl = document.getElementById("home-welcome");
+        const createHint = document.getElementById("create-auth-hint");
+        const joinHint = document.getElementById("join-auth-hint");
+
+        if (state.user) {
+          guestBtns.style.display = "none";
+          userBtns.style.display = "flex";
+          document.getElementById("nav-avatar").textContent = state.user.name
+            .charAt(0)
+            .toUpperCase();
+          document.getElementById("nav-username").textContent = state.user.name;
+          welcomeEl.style.display = "block";
+          document.getElementById("home-welcome-name").textContent =
+            state.user.name;
+          createHint.style.display = "none";
+          joinHint.style.display = "none";
+        } else {
+          guestBtns.style.display = "flex";
+          userBtns.style.display = "none";
+          welcomeEl.style.display = "none";
+          createHint.style.display = "flex";
+          joinHint.style.display = "flex";
+        }
+      }
+
+      async function loadStats() {
+        try {
+          // User count
+          const { count: userCount } = await db
+            .from("users")
+            .select("*", { count: "exact", head: true });
+          const uc = userCount || 0;
+          document.getElementById("stat-users").textContent =
+            uc.toLocaleString();
+          document.getElementById("nav-user-count").textContent =
+            uc.toLocaleString();
+
+          // Session count
+          const { count: sessionCount } = await db
+            .from("sessions")
+            .select("*", { count: "exact", head: true });
+          document.getElementById("stat-sessions").textContent = (
+            sessionCount || 0
+          ).toLocaleString();
+        } catch (err) {
+          console.error("Stats error:", err);
+        }
+      }
+
+      /* ============================================
+   AUTH: SIGN UP
+   ============================================ */
+      async function signUp() {
+        const name = document.getElementById("input-signup-name").value.trim();
+        const uid = document
+          .getElementById("input-signup-uid")
+          .value.trim()
+          .toLowerCase();
+        const pass = document.getElementById("input-signup-pass").value;
+
+        if (!name) {
+          showToast("Enter your name", "error");
+          return;
+        }
+        if (!uid || uid.length < 3) {
+          showToast("User ID must be at least 3 characters", "error");
+          return;
+        }
+        if (!pass || pass.length < 4) {
+          showToast("Password must be at least 4 characters", "error");
+          return;
+        }
+        if (!/^[a-z0-9_]+$/.test(uid)) {
+          showToast(
+            "User ID: only lowercase letters, numbers, underscore",
+            "error",
+          );
           return;
         }
 
-        const btn = document.getElementById("btn-connect");
-        const btnText = document.getElementById("btn-connect-text");
+        const btn = document.getElementById("btn-signup");
         btn.disabled = true;
-        btnText.innerHTML = '<span class="spinner-sm"></span> Connecting...';
+        btn.innerHTML = '<span class="spinner-sm"></span> Creating account...';
 
         try {
-          initSupabase(url, key);
-          // Test connection
+          const hashedPass = await hashPassword(pass);
           const { data, error } = await db
-            .from("sessions")
-            .select("id")
-            .limit(1);
-          if (error) throw error;
+            .from("users")
+            .insert({
+              user_id: uid,
+              name,
+              password: hashedPass,
+            })
+            .select()
+            .single();
 
-          localStorage.setItem("ss_url", url);
-          localStorage.setItem("ss_key", key);
+          if (error) {
+            if (error.code === "23505") {
+              showToast("This User ID is already taken. Try another.", "error");
+            } else throw error;
+            return;
+          }
 
-          showToast("Connected successfully!", "success");
-          showScreen("home");
+          state.user = { userId: uid, name };
+          localStorage.setItem("ss_user", JSON.stringify(state.user));
+
+          closeModal("modal-signup");
+          showToast("Account created! Welcome, " + name, "success");
+          updateHomeUI();
+          await loadStats();
+
+          // Continue pending action
+          if (state.pendingAction === "create") {
+            state.pendingAction = null;
+            setTimeout(() => showCreateModal(), 400);
+          } else if (state.pendingAction === "join") {
+            state.pendingAction = null;
+            setTimeout(() => showJoinModal(), 400);
+          }
         } catch (err) {
-          console.error("Connection error:", err);
-          showToast(
-            "Connection failed. Check your URL, Key, and database tables.",
-            "error",
-          );
-          db = null;
+          console.error("Sign up error:", err);
+          showToast("Sign up failed: " + err.message, "error");
         } finally {
           btn.disabled = false;
-          btnText.textContent = "Connect & Continue";
+          btn.textContent = "Sign Up";
         }
       }
 
-      function resetConfig() {
-        localStorage.removeItem("ss_url");
-        localStorage.removeItem("ss_key");
-        localStorage.removeItem("ss_session");
-        db = null;
-        showScreen("setup");
-        showToast("Configuration reset", "info");
+      /* ============================================
+   AUTH: SIGN IN
+   ============================================ */
+      async function signIn() {
+        const uid = document
+          .getElementById("input-signin-uid")
+          .value.trim()
+          .toLowerCase();
+        const pass = document.getElementById("input-signin-pass").value;
+
+        if (!uid || !pass) {
+          showToast("Enter User ID and Password", "error");
+          return;
+        }
+
+        const btn = document.getElementById("btn-signin");
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-sm"></span> Signing in...';
+
+        try {
+          const hashedPass = await hashPassword(pass);
+          const { data, error } = await db
+            .from("users")
+            .select("user_id, name, password")
+            .eq("user_id", uid)
+            .single();
+
+          if (error || !data) {
+            showToast("User ID not found", "error");
+            return;
+          }
+          if (data.password !== hashedPass) {
+            showToast("Incorrect password", "error");
+            return;
+          }
+
+          state.user = { userId: data.user_id, name: data.name };
+          localStorage.setItem("ss_user", JSON.stringify(state.user));
+
+          closeModal("modal-signin");
+          showToast("Welcome back, " + data.name + "!", "success");
+          updateHomeUI();
+
+          // Continue pending action
+          if (state.pendingAction === "create") {
+            state.pendingAction = null;
+            setTimeout(() => showCreateModal(), 400);
+          } else if (state.pendingAction === "join") {
+            state.pendingAction = null;
+            setTimeout(() => showJoinModal(), 400);
+          }
+        } catch (err) {
+          console.error("Sign in error:", err);
+          showToast("Sign in failed", "error");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Sign In";
+        }
       }
 
-      // ============================================
-      // SCREEN MANAGEMENT
-      // ============================================
+      function signOut() {
+        state.user = null;
+        localStorage.removeItem("ss_user");
+        updateHomeUI();
+        showToast("Signed out", "info");
+      }
+
+      /* ============================================
+   SESSION ACTION HANDLERS
+   ============================================ */
+      function handleCreateSession() {
+        if (!state.user) {
+          state.pendingAction = "create";
+          showToast("Please sign up to create sessions", "info");
+          showModal("modal-signup");
+          return;
+        }
+        showCreateModal();
+      }
+
+      function handleJoinSession() {
+        if (!state.user) {
+          state.pendingAction = "join";
+          showToast("Please sign in to join sessions", "info");
+          showModal("modal-signin");
+          return;
+        }
+        showJoinModal();
+      }
+
+      /* ============================================
+   SCREENS & MODALS
+   ============================================ */
       function showScreen(name) {
         document
           .querySelectorAll(".screen")
           .forEach((s) => s.classList.remove("active"));
         document.getElementById("screen-" + name).classList.add("active");
       }
-
-      // ============================================
-      // MODAL MANAGEMENT
-      // ============================================
       function showModal(id) {
         document.getElementById(id).classList.add("active");
       }
@@ -1664,34 +2359,32 @@
       }
 
       function showCreateModal() {
-        const id = generateSessionId();
-        document.getElementById("generated-id").textContent = id;
+        document.getElementById("generated-id").textContent =
+          generateSessionId();
         document.getElementById("input-create-pass").value = "";
         showModal("modal-create");
       }
-
       function showJoinModal() {
         document.getElementById("input-join-id").value = "";
         document.getElementById("input-join-pass").value = "";
         showModal("modal-join");
       }
 
-      // ============================================
-      // SESSION OPERATIONS
-      // ============================================
+      /* ============================================
+   SESSION: CREATE & JOIN
+   ============================================ */
       function generateSessionId() {
-        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
         let id = "";
         for (let i = 0; i < 6; i++)
-          id += chars[Math.floor(Math.random() * chars.length)];
+          id += c[Math.floor(Math.random() * c.length)];
         return id;
       }
 
       async function hashPassword(password) {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(password + "syncspace_salt_2024");
-        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-        return Array.from(new Uint8Array(hashBuffer))
+        const data = new TextEncoder().encode(password + "syncspace_salt_2024");
+        const buf = await crypto.subtle.digest("SHA-256", data);
+        return Array.from(new Uint8Array(buf))
           .map((b) => b.toString(16).padStart(2, "0"))
           .join("");
       }
@@ -1699,7 +2392,6 @@
       async function createSession() {
         const sessionId = document.getElementById("generated-id").textContent;
         const password = document.getElementById("input-create-pass").value;
-
         if (!password || password.length < 3) {
           showToast("Password must be at least 3 characters", "error");
           return;
@@ -1711,30 +2403,25 @@
 
         try {
           const hashedPass = await hashPassword(password);
-
           const { data, error } = await db
             .from("sessions")
             .insert({ id: sessionId, password: hashedPass })
             .select()
             .single();
-
           if (error) {
             if (error.code === "23505") {
-              showToast("Session ID collision. Please try again.", "error");
-            } else {
-              throw error;
-            }
+              showToast("ID collision, try again", "error");
+              document.getElementById("generated-id").textContent =
+                generateSessionId();
+            } else throw error;
             return;
           }
-
           state.sessionId = sessionId;
-          localStorage.setItem("ss_session", sessionId);
           closeModal("modal-create");
           showToast("Session created! ID: " + sessionId, "success");
           enterWorkspace();
         } catch (err) {
-          console.error("Create session error:", err);
-          showToast("Failed to create session: " + err.message, "error");
+          showToast("Failed: " + err.message, "error");
         } finally {
           btn.disabled = false;
           btn.textContent = "Create Session";
@@ -1747,9 +2434,8 @@
           .value.trim()
           .toUpperCase();
         const password = document.getElementById("input-join-pass").value;
-
         if (!sessionId || !password) {
-          showToast("Please enter both Session ID and Password", "error");
+          showToast("Enter both Session ID and Password", "error");
           return;
         }
 
@@ -1763,9 +2449,8 @@
             .select("*")
             .eq("id", sessionId)
             .single();
-
           if (error || !session) {
-            showToast("Session not found. Check the Session ID.", "error");
+            showToast("Session not found", "error");
             return;
           }
 
@@ -1776,13 +2461,11 @@
           }
 
           state.sessionId = sessionId;
-          localStorage.setItem("ss_session", sessionId);
           closeModal("modal-join");
           showToast("Joined session: " + sessionId, "success");
           enterWorkspace();
         } catch (err) {
-          console.error("Join session error:", err);
-          showToast("Failed to join session: " + err.message, "error");
+          showToast("Failed: " + err.message, "error");
         } finally {
           btn.disabled = false;
           btn.textContent = "Join Session";
@@ -1790,39 +2473,36 @@
       }
 
       function leaveSession() {
-        if (!confirm("Are you sure you want to leave this session?")) return;
+        if (!confirm("Leave this session?")) return;
         cleanupRealtime();
         state.sessionId = null;
         state.sectionId = null;
         state.sections = [];
         state.texts = {};
         state.files = {};
-        localStorage.removeItem("ss_session");
         showScreen("home");
+        loadStats();
         showToast("Left the session", "info");
       }
 
-      // ============================================
-      // WORKSPACE
-      // ============================================
+      /* ============================================
+   WORKSPACE
+   ============================================ */
       async function enterWorkspace() {
         showScreen("workspace");
         document.getElementById("ws-session-id").textContent = state.sessionId;
+        if (state.user) {
+          document.getElementById("ws-user-display").innerHTML =
+            '<i class="fas fa-user"></i> ' + escapeHtml(state.user.name);
+        }
         state.sectionId = null;
         state.sections = [];
         state.texts = {};
         state.files = {};
-
         await loadSections();
         setupRealtime();
-
-        // Auto-select first section or show empty
-        if (state.sections.length > 0) {
-          selectSection(state.sections[0].id);
-        } else {
-          // Auto-create a default section
-          await createDefaultSection();
-        }
+        if (state.sections.length > 0) selectSection(state.sections[0].id);
+        else await createDefaultSection();
       }
 
       async function createDefaultSection() {
@@ -1836,20 +2516,19 @@
             })
             .select()
             .single();
-
           if (!error && data) {
             state.sections.push(data);
             renderSections();
             selectSection(data.id);
           }
         } catch (err) {
-          console.error("Default section error:", err);
+          console.error(err);
         }
       }
 
-      // ============================================
-      // SECTION OPERATIONS
-      // ============================================
+      /* ============================================
+   SECTIONS
+   ============================================ */
       async function loadSections() {
         try {
           const { data, error } = await db
@@ -1857,106 +2536,83 @@
             .select("*")
             .eq("session_id", state.sessionId)
             .order("sort_order", { ascending: true });
-
           if (!error && data) {
             state.sections = data;
             renderSections();
           }
         } catch (err) {
-          console.error("Load sections error:", err);
+          console.error(err);
         }
       }
 
       async function addSection() {
-        const nameInput = document.getElementById("input-section-name");
-        const name = nameInput.value.trim();
+        const inp = document.getElementById("input-section-name");
+        const name = inp.value.trim();
         if (!name) {
-          showToast("Please enter a section name", "error");
+          showToast("Enter a section name", "error");
           return;
         }
-
         try {
-          const sortOrder = state.sections.length;
           const { data, error } = await db
             .from("sections")
             .insert({
               session_id: state.sessionId,
-              name: name,
-              sort_order: sortOrder,
+              name,
+              sort_order: state.sections.length,
             })
             .select()
             .single();
-
           if (error) throw error;
-
           state.sections.push(data);
           renderSections();
           selectSection(data.id);
           closeModal("modal-section");
-          nameInput.value = "";
+          inp.value = "";
           showToast('Section "' + name + '" created', "success");
         } catch (err) {
-          console.error("Add section error:", err);
           showToast("Failed to create section", "error");
         }
       }
 
-      async function deleteSection(sectionId, e) {
+      async function deleteSection(sid, e) {
         e.stopPropagation();
-        const section = state.sections.find((s) => s.id === sectionId);
-        if (
-          !confirm('Delete section "' + section.name + '" and all its content?')
-        )
-          return;
-
+        const sec = state.sections.find((s) => s.id === sid);
+        if (!confirm('Delete "' + sec.name + '"?')) return;
         try {
-          const { error } = await db
-            .from("sections")
-            .delete()
-            .eq("id", sectionId);
+          const { error } = await db.from("sections").delete().eq("id", sid);
           if (error) throw error;
-
-          state.sections = state.sections.filter((s) => s.id !== sectionId);
-          delete state.texts[sectionId];
-          delete state.files[sectionId];
-
-          if (state.sectionId === sectionId) {
+          state.sections = state.sections.filter((s) => s.id !== sid);
+          delete state.texts[sid];
+          delete state.files[sid];
+          if (state.sectionId === sid) {
             state.sectionId = null;
-            if (state.sections.length > 0) {
-              selectSection(state.sections[0].id);
-            } else {
-              showNoSection();
-            }
+            if (state.sections.length > 0) selectSection(state.sections[0].id);
+            else showNoSection();
           }
           renderSections();
           showToast("Section deleted", "info");
         } catch (err) {
-          console.error("Delete section error:", err);
-          showToast("Failed to delete section", "error");
+          showToast("Failed to delete", "error");
         }
       }
 
-      function selectSection(sectionId) {
-        state.sectionId = sectionId;
+      function selectSection(sid) {
+        state.sectionId = sid;
         renderSections();
         showSectionContent();
-
-        const section = state.sections.find((s) => s.id === sectionId);
-        if (section) {
+        const sec = state.sections.find((s) => s.id === sid);
+        if (sec)
           document.getElementById("ws-active-section-name").textContent =
-            section.name;
-        }
-
-        loadText(sectionId);
-        loadFiles(sectionId);
+            sec.name;
+        switchTab("text");
+        loadText(sid);
+        loadFiles(sid);
       }
 
       function showSectionContent() {
         document.getElementById("no-section-state").style.display = "none";
-        const content = document.getElementById("section-content");
-        content.style.display = "flex";
+        document.getElementById("section-content").style.display = "flex";
       }
-
       function showNoSection() {
         document.getElementById("no-section-state").style.display = "flex";
         document.getElementById("section-content").style.display = "none";
@@ -1964,94 +2620,85 @@
 
       function renderSections() {
         const list = document.getElementById("sections-list");
-        if (state.sections.length === 0) {
+        if (!state.sections.length) {
           list.innerHTML =
-            '<div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:0.82rem"><i class="fas fa-folder-open" style="font-size:1.2rem;margin-bottom:0.5rem;display:block;opacity:0.5"></i>No sections yet</div>';
+            '<div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:.8rem"><i class="fas fa-folder-open" style="font-size:1.1rem;margin-bottom:.4rem;display:block;opacity:.5"></i>No sections yet</div>';
           return;
         }
-
         list.innerHTML = state.sections
           .map((s) => {
-            const isActive = s.id === state.sectionId;
-            const fileCount = (state.files[s.id] || []).length;
-            return `
-                <div class="section-item ${isActive ? "active" : ""}" onclick="selectSection('${s.id}')">
-                    <span class="sec-icon"><i class="fas fa-file-lines"></i></span>
-                    <span class="sec-name">${escapeHtml(s.name)}</span>
-                    ${fileCount > 0 ? `<span style="font-size:0.68rem;color:var(--text-muted);background:var(--bg-elevated);padding:0.1rem 0.4rem;border-radius:10px">${fileCount}</span>` : ""}
-                    <button class="sec-delete" onclick="deleteSection('${s.id}', event)" title="Delete"><i class="fas fa-trash-can"></i></button>
-                </div>
-            `;
+            const a = s.id === state.sectionId;
+            const fc = (state.files[s.id] || []).length;
+            return `<div class="section-item ${a ? "active" : ""}" onclick="selectSection('${s.id}')">
+            <span class="sec-icon"><i class="fas fa-file-lines"></i></span>
+            <span class="sec-name">${escapeHtml(s.name)}</span>
+            ${fc > 0 ? `<span class="sec-badge">${fc}</span>` : ""}
+            <button class="sec-delete" onclick="deleteSection('${s.id}',event)"><i class="fas fa-trash-can"></i></button>
+        </div>`;
           })
           .join("");
       }
 
-      // ============================================
-      // TEXT OPERATIONS
-      // ============================================
-      async function loadText(sectionId) {
+      /* ============================================
+   TEXT
+   ============================================ */
+      async function loadText(sid) {
         try {
           const { data, error } = await db
             .from("texts")
             .select("content")
-            .eq("section_id", sectionId)
+            .eq("section_id", sid)
             .single();
-
-          const textarea = document.getElementById("ws-textarea");
+          const ta = document.getElementById("ws-textarea");
           if (!error && data) {
-            state.texts[sectionId] = data.content || "";
-            textarea.value = data.content || "";
+            state.texts[sid] = data.content || "";
+            ta.value = data.content || "";
           } else {
-            // No text row yet, create one
-            state.texts[sectionId] = "";
-            textarea.value = "";
-            // Try to create the text row
-            await db
-              .from("texts")
-              .insert({
-                section_id: sectionId,
-                session_id: state.sessionId,
-                content: "",
-              })
-              .select()
-              .single();
+            state.texts[sid] = "";
+            ta.value = "";
+            try {
+              await db
+                .from("texts")
+                .insert({
+                  section_id: sid,
+                  session_id: state.sessionId,
+                  content: "",
+                });
+            } catch (e) {}
           }
           updateCounts();
         } catch (err) {
-          console.error("Load text error:", err);
+          console.error(err);
         }
       }
 
-      async function saveText(sectionId, content) {
-        if (!sectionId) return;
+      async function saveText(sid, content) {
+        if (!sid) return;
         try {
           setSaveStatus("saving");
           const { error } = await db
             .from("texts")
-            .update({ content: content, updated_at: new Date().toISOString() })
-            .eq("section_id", sectionId);
-
+            .update({ content, updated_at: new Date().toISOString() })
+            .eq("section_id", sid);
           if (error) throw error;
-          state.texts[sectionId] = content;
+          state.texts[sid] = content;
           setSaveStatus("saved");
         } catch (err) {
-          console.error("Save text error:", err);
           setSaveStatus("saved");
         }
       }
 
       function onTextInput() {
-        const textarea = document.getElementById("ws-textarea");
-        const content = textarea.value;
         updateCounts();
-
-        // Debounced save
         clearTimeout(state.debounceTimer);
         setSaveStatus("saving");
         state.debounceTimer = setTimeout(() => {
           if (state.sectionId) {
             state.isTyping = true;
-            saveText(state.sectionId, content);
+            saveText(
+              state.sectionId,
+              document.getElementById("ws-textarea").value,
+            );
             setTimeout(() => {
               state.isTyping = false;
             }, 1500);
@@ -2059,10 +2706,9 @@
         }, 600);
       }
 
-      function setSaveStatus(status) {
+      function setSaveStatus(s) {
         const el = document.getElementById("save-indicator");
-        state.saveStatus = status;
-        if (status === "saving") {
+        if (s === "saving") {
           el.className = "save-indicator saving";
           el.innerHTML = '<span class="spinner-sm"></span> Saving...';
         } else {
@@ -2072,68 +2718,64 @@
       }
 
       function updateCounts() {
-        const textarea = document.getElementById("ws-textarea");
-        const text = textarea.value;
+        const t = document.getElementById("ws-textarea").value;
         document.getElementById("char-count").textContent =
-          text.length + " characters";
-        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-        document.getElementById("word-count").textContent = words + " words";
+          t.length + " characters";
+        document.getElementById("word-count").textContent =
+          (t.trim() ? t.trim().split(/\s+/).length : 0) + " words";
       }
 
       function copyAllText() {
-        const textarea = document.getElementById("ws-textarea");
-        if (!textarea.value) {
+        const t = document.getElementById("ws-textarea").value;
+        if (!t) {
           showToast("Nothing to copy", "info");
           return;
         }
-        copyToClipboard(textarea.value, "Text content");
+        copyToClipboard(t, "Text");
       }
-
       function clearText() {
-        const textarea = document.getElementById("ws-textarea");
-        if (!textarea.value) return;
-        if (!confirm("Clear all text in this section?")) return;
-        textarea.value = "";
+        const ta = document.getElementById("ws-textarea");
+        if (!ta.value) return;
+        if (!confirm("Clear all text?")) return;
+        ta.value = "";
         onTextInput();
-        showToast("Text cleared", "info");
+        showToast("Cleared", "info");
       }
-
       function downloadText() {
-        const textarea = document.getElementById("ws-textarea");
-        if (!textarea.value) {
+        const t = document.getElementById("ws-textarea").value;
+        if (!t) {
           showToast("Nothing to download", "info");
           return;
         }
-        const section = state.sections.find((s) => s.id === state.sectionId);
-        const filename = (section ? section.name : "note") + ".txt";
-        const blob = new Blob([textarea.value], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
+        const s = state.sections.find((x) => x.id === state.sectionId);
+        const fn = (s ? s.name : "note") + ".txt";
+        const b = new Blob([t], { type: "text/plain" });
+        const u = URL.createObjectURL(b);
         const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
+        a.href = u;
+        a.download = fn;
         a.click();
-        URL.revokeObjectURL(url);
-        showToast("Downloaded " + filename, "success");
+        URL.revokeObjectURL(u);
+        showToast("Downloaded " + fn, "success");
       }
 
-      // ============================================
-      // FILE OPERATIONS
-      // ============================================
-      async function loadFiles(sectionId) {
+      /* ============================================
+   FILES
+   ============================================ */
+      async function loadFiles(sid) {
         try {
           const { data, error } = await db
             .from("files")
             .select("*")
-            .eq("section_id", sectionId)
+            .eq("section_id", sid)
             .order("created_at", { ascending: false });
-
           if (!error && data) {
-            state.files[sectionId] = data;
+            state.files[sid] = data;
             renderFiles();
-            renderSections(); // Update file count badges
+            renderSections();
           }
         } catch (err) {
-          console.error("Load files error:", err);
+          console.error(err);
         }
       }
 
@@ -2142,184 +2784,115 @@
           showToast("Select a section first", "error");
           return;
         }
-
-        const MAX_SIZE = 2 * 1024 * 1024; // 2MB
-
+        const MAX = 2 * 1024 * 1024;
         for (const file of fileList) {
-          if (file.size > MAX_SIZE) {
-            showToast(`"${file.name}" exceeds 2MB limit`, "error");
+          if (file.size > MAX) {
+            showToast('"' + file.name + '" exceeds 2MB', "error");
             continue;
           }
-
           try {
-            const base64 = await readFileAsBase64(file);
+            const b64 = await readFileAsBase64(file);
             const { data, error } = await db
               .from("files")
               .insert({
                 section_id: state.sectionId,
                 session_id: state.sessionId,
                 file_name: file.name,
-                file_data: base64,
+                file_data: b64,
                 file_type: file.type || "application/octet-stream",
                 file_size: file.size,
               })
               .select()
               .single();
-
             if (error) throw error;
-
             if (!state.files[state.sectionId])
               state.files[state.sectionId] = [];
             state.files[state.sectionId].unshift(data);
-            showToast(`"${file.name}" uploaded`, "success");
+            showToast('"' + file.name + '" uploaded', "success");
           } catch (err) {
-            console.error("Upload error:", err);
-            showToast(`Failed to upload "${file.name}"`, "error");
+            showToast('Failed to upload "' + file.name + '"', "error");
           }
         }
-
         renderFiles();
         renderSections();
-        // Reset file input
         document.getElementById("file-input").value = "";
       }
 
       function readFileAsBase64(file) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
+        return new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = rej;
+          r.readAsDataURL(file);
         });
       }
 
-      async function downloadFileItem(fileId) {
-        const allFiles = Object.values(state.files).flat();
-        const file = allFiles.find((f) => f.id === fileId);
-        if (!file) return;
-
+      async function downloadFileItem(fid) {
+        const f = Object.values(state.files)
+          .flat()
+          .find((x) => x.id === fid);
+        if (!f) return;
         const a = document.createElement("a");
-        a.href = file.file_data;
-        a.download = file.file_name;
+        a.href = f.file_data;
+        a.download = f.file_name;
         a.click();
-        showToast("Downloading " + file.file_name, "success");
+        showToast("Downloading " + f.file_name, "success");
       }
 
-      async function deleteFileItem(fileId) {
+      async function deleteFileItem(fid) {
         if (!confirm("Delete this file?")) return;
-
         try {
-          const { error } = await db.from("files").delete().eq("id", fileId);
+          const { error } = await db.from("files").delete().eq("id", fid);
           if (error) throw error;
-
-          // Remove from local state
-          for (const sid in state.files) {
-            state.files[sid] = state.files[sid].filter((f) => f.id !== fileId);
-          }
+          for (const sid in state.files)
+            state.files[sid] = state.files[sid].filter((f) => f.id !== fid);
           renderFiles();
           renderSections();
           showToast("File deleted", "info");
         } catch (err) {
-          console.error("Delete file error:", err);
-          showToast("Failed to delete file", "error");
+          showToast("Failed to delete", "error");
         }
       }
 
       function renderFiles() {
         const list = document.getElementById("files-list");
         const files = state.files[state.sectionId] || [];
-
-        if (files.length === 0) {
+        if (!files.length) {
           list.innerHTML =
-            '<div style="text-align:center;padding:2rem;color:var(--text-muted);font-size:0.85rem"><i class="fas fa-inbox" style="font-size:1.5rem;margin-bottom:0.5rem;display:block;opacity:0.4"></i>No files in this section</div>';
+            '<div style="text-align:center;padding:2rem;color:var(--text-muted);font-size:.82rem"><i class="fas fa-inbox" style="font-size:1.3rem;margin-bottom:.4rem;display:block;opacity:.4"></i>No files yet</div>';
           return;
         }
-
         list.innerHTML = files
           .map((f) => {
-            const iconInfo = getFileIcon(f.file_name, f.file_type);
-            const sizeStr = formatFileSize(f.file_size);
-            const timeStr = timeAgo(new Date(f.created_at));
-            return `
-                <div class="file-item">
-                    <div class="file-icon ${iconInfo.cls}"><i class="${iconInfo.icon}"></i></div>
-                    <div class="file-info">
-                        <div class="file-name" title="${escapeHtml(f.file_name)}">${escapeHtml(f.file_name)}</div>
-                        <div class="file-meta">${sizeStr} &middot; ${timeStr}</div>
-                    </div>
-                    <div class="file-actions">
-                        <button onclick="downloadFileItem('${f.id}')" title="Download"><i class="fas fa-download"></i></button>
-                        <button class="del-btn" onclick="deleteFileItem('${f.id}')" title="Delete"><i class="fas fa-trash-can"></i></button>
-                    </div>
-                </div>
-            `;
+            const ic = getFileIcon(f.file_name, f.file_type);
+            return `<div class="file-item">
+            <div class="file-icon ${ic.cls}"><i class="${ic.icon}"></i></div>
+            <div class="file-info"><div class="file-name" title="${escapeHtml(f.file_name)}">${escapeHtml(f.file_name)}</div><div class="file-meta">${formatFileSize(f.file_size)} &middot; ${timeAgo(new Date(f.created_at))}</div></div>
+            <div class="file-actions">
+                <button onclick="downloadFileItem('${f.id}')"><i class="fas fa-download"></i></button>
+                <button class="del-btn" onclick="deleteFileItem('${f.id}')"><i class="fas fa-trash-can"></i></button>
+            </div></div>`;
           })
           .join("");
       }
 
       function getFileIcon(name, type) {
         const ext = name.split(".").pop().toLowerCase();
-        const imgExts = [
-          "png",
-          "jpg",
-          "jpeg",
-          "gif",
-          "svg",
-          "webp",
-          "bmp",
-          "ico",
-        ];
-        const docExts = [
-          "pdf",
-          "doc",
-          "docx",
-          "txt",
-          "rtf",
-          "odt",
-          "xls",
-          "xlsx",
-          "ppt",
-          "pptx",
-          "csv",
-        ];
-        const zipExts = ["zip", "rar", "7z", "tar", "gz"];
-
-        if (imgExts.includes(ext) || (type && type.startsWith("image/")))
-          return { icon: "fas fa-image", cls: "img-icon" };
         if (
-          docExts.includes(ext) ||
-          (type &&
-            (type.includes("pdf") ||
-              type.includes("document") ||
-              type.includes("spreadsheet")))
+          ["png", "jpg", "jpeg", "gif", "svg", "webp"].includes(ext) ||
+          (type && type.startsWith("image/"))
         )
+          return { icon: "fas fa-image", cls: "img-icon" };
+        if (["pdf", "doc", "docx", "txt", "csv", "xls", "xlsx"].includes(ext))
           return { icon: "fas fa-file-lines", cls: "doc-icon" };
-        if (zipExts.includes(ext) || (type && type.includes("zip")))
+        if (["zip", "rar", "7z", "tar", "gz"].includes(ext))
           return { icon: "fas fa-file-zipper", cls: "zip-icon" };
         return { icon: "fas fa-file", cls: "default-icon" };
       }
 
-      // Drag & drop
-      const uploadArea = document.getElementById("upload-area");
-      if (uploadArea) {
-        uploadArea.addEventListener("dragover", (e) => {
-          e.preventDefault();
-          uploadArea.classList.add("dragover");
-        });
-        uploadArea.addEventListener("dragleave", () => {
-          uploadArea.classList.remove("dragover");
-        });
-        uploadArea.addEventListener("drop", (e) => {
-          e.preventDefault();
-          uploadArea.classList.remove("dragover");
-          if (e.dataTransfer.files.length)
-            handleFileUpload(e.dataTransfer.files);
-        });
-      }
-
-      // ============================================
-      // TAB SWITCHING
-      // ============================================
+      /* ============================================
+   TABS
+   ============================================ */
       function switchTab(tab) {
         state.activeTab = tab;
         document
@@ -2336,16 +2909,14 @@
           .classList.toggle("active", tab === "files");
       }
 
-      // ============================================
-      // REAL-TIME SUBSCRIPTIONS
-      // ============================================
+      /* ============================================
+   REALTIME
+   ============================================ */
       function setupRealtime() {
         cleanupRealtime();
+        const ch = db.channel("session-" + state.sessionId);
 
-        const channel = db.channel("session-" + state.sessionId);
-
-        // Sections changes
-        channel.on(
+        ch.on(
           "postgres_changes",
           {
             event: "*",
@@ -2353,20 +2924,18 @@
             table: "sections",
             filter: `session_id=eq.${state.sessionId}`,
           },
-          (payload) => {
-            if (payload.eventType === "INSERT") {
-              if (!state.sections.find((s) => s.id === payload.new.id)) {
-                state.sections.push(payload.new);
+          (p) => {
+            if (p.eventType === "INSERT") {
+              if (!state.sections.find((s) => s.id === p.new.id)) {
+                state.sections.push(p.new);
                 renderSections();
-                showToast("New section added: " + payload.new.name, "info");
+                showToast("New section: " + p.new.name, "info");
               }
-            } else if (payload.eventType === "DELETE") {
-              state.sections = state.sections.filter(
-                (s) => s.id !== payload.old.id,
-              );
-              delete state.texts[payload.old.id];
-              delete state.files[payload.old.id];
-              if (state.sectionId === payload.old.id) {
+            } else if (p.eventType === "DELETE") {
+              state.sections = state.sections.filter((s) => s.id !== p.old.id);
+              delete state.texts[p.old.id];
+              delete state.files[p.old.id];
+              if (state.sectionId === p.old.id) {
                 state.sectionId = null;
                 if (state.sections.length > 0)
                   selectSection(state.sections[0].id);
@@ -2377,8 +2946,7 @@
           },
         );
 
-        // Text changes
-        channel.on(
+        ch.on(
           "postgres_changes",
           {
             event: "UPDATE",
@@ -2386,24 +2954,22 @@
             table: "texts",
             filter: `session_id=eq.${state.sessionId}`,
           },
-          (payload) => {
-            if (payload.new.section_id === state.sectionId && !state.isTyping) {
-              const textarea = document.getElementById("ws-textarea");
-              const cursorPos = textarea.selectionStart;
-              textarea.value = payload.new.content || "";
-              // Try to restore cursor position
-              textarea.setSelectionRange(cursorPos, cursorPos);
-              state.texts[payload.new.section_id] = payload.new.content || "";
+          (p) => {
+            if (p.new.section_id === state.sectionId && !state.isTyping) {
+              const ta = document.getElementById("ws-textarea");
+              const cp = ta.selectionStart;
+              ta.value = p.new.content || "";
+              ta.setSelectionRange(cp, cp);
+              state.texts[p.new.section_id] = p.new.content || "";
               updateCounts();
               setSaveStatus("saved");
             } else {
-              state.texts[payload.new.section_id] = payload.new.content || "";
+              state.texts[p.new.section_id] = p.new.content || "";
             }
           },
         );
 
-        // File changes
-        channel.on(
+        ch.on(
           "postgres_changes",
           {
             event: "*",
@@ -2411,91 +2977,78 @@
             table: "files",
             filter: `session_id=eq.${state.sessionId}`,
           },
-          (payload) => {
-            if (payload.eventType === "INSERT") {
-              const sid = payload.new.section_id;
+          (p) => {
+            if (p.eventType === "INSERT") {
+              const sid = p.new.section_id;
               if (!state.files[sid]) state.files[sid] = [];
-              if (!state.files[sid].find((f) => f.id === payload.new.id)) {
-                state.files[sid].unshift(payload.new);
+              if (!state.files[sid].find((f) => f.id === p.new.id)) {
+                state.files[sid].unshift(p.new);
                 if (sid === state.sectionId) renderFiles();
                 renderSections();
                 if (sid === state.sectionId)
-                  showToast("New file: " + payload.new.file_name, "info");
+                  showToast("New file: " + p.new.file_name, "info");
               }
-            } else if (payload.eventType === "DELETE") {
-              for (const sid in state.files) {
+            } else if (p.eventType === "DELETE") {
+              for (const sid in state.files)
                 state.files[sid] = state.files[sid].filter(
-                  (f) => f.id !== payload.old.id,
+                  (f) => f.id !== p.old.id,
                 );
-              }
-              if (payload.old.section_id === state.sectionId) renderFiles();
+              if (p.old.section_id === state.sectionId) renderFiles();
               renderSections();
             }
           },
         );
 
-        channel.subscribe((status) => {
-          console.log("Realtime status:", status);
-        });
-
-        state.subscriptions.push(channel);
+        ch.subscribe((status) => console.log("Realtime:", status));
+        state.subscriptions.push(ch);
       }
 
       function cleanupRealtime() {
-        state.subscriptions.forEach((ch) => {
-          db.removeChannel(ch);
-        });
+        if (db)
+          state.subscriptions.forEach((ch) => {
+            try {
+              db.removeChannel(ch);
+            } catch (e) {}
+          });
         state.subscriptions = [];
       }
 
-      // ============================================
-      // SHARE LINK
-      // ============================================
+      /* ============================================
+   SHARE & SIDEBAR
+   ============================================ */
       function shareLink() {
-        const url =
+        copyToClipboard(
           window.location.origin +
-          window.location.pathname +
-          "?join=" +
-          state.sessionId;
-        copyToClipboard(url, "Share link");
+            window.location.pathname +
+            "?join=" +
+            state.sessionId,
+          "Share link",
+        );
       }
-
-      // ============================================
-      // SIDEBAR TOGGLE (MOBILE)
-      // ============================================
       function toggleSidebar() {
-        const sidebar = document.getElementById("ws-sidebar");
-        const backdrop = document.getElementById("sidebar-backdrop");
-        sidebar.classList.toggle("open");
-        backdrop.classList.toggle("active");
+        document.getElementById("ws-sidebar").classList.toggle("open");
+        document.getElementById("sidebar-backdrop").classList.toggle("active");
       }
-
-      // ============================================
-      // PASSWORD VISIBILITY TOGGLE
-      // ============================================
-      function togglePassVis(inputId, btn) {
-        const input = document.getElementById(inputId);
-        const icon = btn.querySelector("i");
-        if (input.type === "password") {
-          input.type = "text";
-          icon.className = "fas fa-eye-slash";
+      function togglePassVis(id, btn) {
+        const inp = document.getElementById(id);
+        const ic = btn.querySelector("i");
+        if (inp.type === "password") {
+          inp.type = "text";
+          ic.className = "fas fa-eye-slash";
         } else {
-          input.type = "password";
-          icon.className = "fas fa-eye";
+          inp.type = "password";
+          ic.className = "fas fa-eye";
         }
       }
 
-      // ============================================
-      // UTILITY FUNCTIONS
-      // ============================================
+      /* ============================================
+   UTILITIES
+   ============================================ */
       function copyToClipboard(text, label) {
         navigator.clipboard
           .writeText(text)
-          .then(() => {
-            showToast(label + " copied to clipboard!", "success");
-          })
+          .then(() => showToast(label + " copied!", "success"))
           .catch(() => {
-            // Fallback
             const ta = document.createElement("textarea");
             ta.value = text;
             document.body.appendChild(ta);
@@ -2506,67 +3059,62 @@
           });
       }
 
-      function showToast(message, type = "info") {
-        const container = document.getElementById("toast-container");
+      function showToast(msg, type = "info") {
+        const c = document.getElementById("toast-container");
         const icons = {
           success: "fas fa-check-circle",
           error: "fas fa-circle-exclamation",
           info: "fas fa-circle-info",
         };
-        const toast = document.createElement("div");
-        toast.className = "toast-item " + type;
-        toast.innerHTML = `<i class="${icons[type] || icons.info}"></i><span>${escapeHtml(message)}</span>`;
-        container.appendChild(toast);
-
+        const t = document.createElement("div");
+        t.className = "toast-item " + type;
+        t.innerHTML = `<i class="${icons[type] || icons.info}"></i><span>${escapeHtml(msg)}</span>`;
+        c.appendChild(t);
         setTimeout(() => {
-          toast.classList.add("removing");
-          setTimeout(() => toast.remove(), 250);
+          t.classList.add("removing");
+          setTimeout(() => t.remove(), 250);
         }, 3000);
       }
 
-      function escapeHtml(str) {
-        const div = document.createElement("div");
-        div.textContent = str;
-        return div.innerHTML;
+      function escapeHtml(s) {
+        const d = document.createElement("div");
+        d.textContent = s;
+        return d.innerHTML;
       }
-
-      function formatFileSize(bytes) {
-        if (!bytes) return "0 B";
-        const units = ["B", "KB", "MB", "GB"];
-        let i = 0;
-        let size = bytes;
-        while (size >= 1024 && i < units.length - 1) {
-          size /= 1024;
+      function formatFileSize(b) {
+        if (!b) return "0 B";
+        const u = ["B", "KB", "MB", "GB"];
+        let i = 0,
+          s = b;
+        while (s >= 1024 && i < u.length - 1) {
+          s /= 1024;
           i++;
         }
-        return size.toFixed(i > 0 ? 1 : 0) + " " + units[i];
+        return s.toFixed(i > 0 ? 1 : 0) + " " + u[i];
+      }
+      function timeAgo(d) {
+        const s = Math.floor((new Date() - d) / 1000);
+        if (s < 60) return "just now";
+        const m = Math.floor(s / 60);
+        if (m < 60) return m + "m ago";
+        const h = Math.floor(m / 60);
+        if (h < 24) return h + "h ago";
+        return Math.floor(h / 24) + "d ago";
       }
 
-      function timeAgo(date) {
-        const seconds = Math.floor((new Date() - date) / 1000);
-        if (seconds < 60) return "just now";
-        const minutes = Math.floor(seconds / 60);
-        if (minutes < 60) return minutes + "m ago";
-        const hours = Math.floor(minutes / 60);
-        if (hours < 24) return hours + "h ago";
-        const days = Math.floor(hours / 24);
-        return days + "d ago";
-      }
-
-      // Particles background
-      function createParticles(containerId, count) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
+      function createParticles(id, count) {
+        const c = document.getElementById(id);
+        if (!c) return;
         for (let i = 0; i < count; i++) {
           const p = document.createElement("div");
           p.className = "particle";
-          const size = Math.random() * 4 + 2;
-          p.style.width = size + "px";
-          p.style.height = size + "px";
+          const sz = Math.random() * 4 + 2;
+          p.style.width = sz + "px";
+          p.style.height = sz + "px";
           p.style.left = Math.random() * 100 + "%";
           p.style.animationDuration = Math.random() * 15 + 10 + "s";
           p.style.animationDelay = Math.random() * 10 + "s";
-          container.appendChild(p);
+          c.appendChild(p);
         }
       }
     </script>
