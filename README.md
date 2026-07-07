@@ -321,8 +321,8 @@ This project is distributed under the **MIT License**. See the `LICENSE` file fo
 
 <div align="center">
 
-### Built with ❤️ by Your Name
+### Built with ❤️ by Miraj Paradva
 
-[GitHub](https://github.com/yourusername/syncspace) • [LinkedIn](https://www.linkedin.com/in/yourprofile/) • [Email](mailto:youremail@example.com)
+[GitHub](https://github.com/mirajparadva101/syncspace) • [Email](mailto:mirajstudy101@gmail.com)
 
 </div>
