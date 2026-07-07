@@ -12,7 +12,7 @@
 
 **SyncSpace** is a modern, secure, and real-time collaborative workspace that allows teams to share text notes and files instantly across multiple devices. It includes user authentication, a live analytics dashboard, and secure runtime configuration using environment variables.
 
-[🌍 Live Demo](https://your-vercel-app.vercel.app) • [📄 Documentation](#-getting-started) • [🐛 Report Bug](https://github.com/yourusername/syncspace/issues) • [✨ Request Feature](https://github.com/yourusername/syncspace/issues)
+[🌍 Live Demo](https://sync-space-ten.vercel.app) • [📄 Documentation](#-getting-started) • [🐛 Report Bug](https://github.com/mirajparadva101/syncspace/issues) • [✨ Request Feature](https://github.com/mirajparadva101/syncspace/issues)
 
 </div>
 
