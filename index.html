@@ -1125,6 +1125,7 @@
         align-items: center;
         justify-content: center;
         font-size: 0.85rem;
+        flex-shrink: 0;
       }
       .file-icon.img-icon {
         background: rgba(255, 107, 129, 0.1);
@@ -1160,6 +1161,7 @@
       .file-item .file-actions {
         display: flex;
         gap: 0.3rem;
+        flex-shrink: 0;
       }
       .file-item .file-actions button {
         background: var(--bg-elevated);
@@ -1178,6 +1180,10 @@
       .file-item .file-actions button:hover {
         border-color: var(--accent-border);
         color: var(--accent);
+      }
+      .file-item .file-actions .view-btn:hover {
+        border-color: rgba(77, 166, 255, 0.3);
+        color: var(--info-blue);
       }
       .file-item .file-actions .del-btn:hover {
         border-color: rgba(255, 77, 94, 0.3);
@@ -1944,7 +1950,7 @@
    APPLICATION STATE
    ============================================ */
       const state = {
-        user: null, // { userId, name } from localStorage/DB
+        user: null,
         sessionId: null,
         sectionId: null,
         sections: [],
@@ -1954,9 +1960,11 @@
         activeTab: "text",
         subscriptions: [],
         debounceTimer: null,
-        pendingAction: null, // 'create' or 'join' — after auth, continue this action
+        pendingAction: null,
       };
+
       let db = null;
+      let statsPolling = null; // 0.30s polling interval reference
 
       /* ============================================
    INITIALIZATION
@@ -1966,7 +1974,6 @@
         createParticles("fallback-particles", 12);
         createParticles("home-particles", 18);
 
-        // Drag & drop
         const ua = document.getElementById("upload-area");
         if (ua) {
           ua.addEventListener("dragover", (e) => {
@@ -1983,19 +1990,16 @@
               handleFileUpload(e.dataTransfer.files);
           });
         }
-
         await initApp();
       });
 
       async function initApp() {
         const msgEl = document.getElementById("loading-msg");
         msgEl.textContent = "Fetching configuration...";
-
         try {
           const res = await fetch("/api/config");
           if (!res.ok) throw new Error("API " + res.status);
           const config = await res.json();
-
           if (
             config.configured &&
             config.supabaseUrl &&
@@ -2005,7 +2009,6 @@
             initSupabase(config.supabaseUrl, config.supabaseAnonKey);
             const { error } = await db.from("sessions").select("id").limit(1);
             if (error) throw error;
-
             msgEl.textContent = "Connected!";
             await enterHomeScreen();
             return;
@@ -2014,7 +2017,6 @@
           console.warn("API config failed:", err.message);
         }
 
-        // Fallback: localStorage config
         const savedUrl = localStorage.getItem("ss_url");
         const savedKey = localStorage.getItem("ss_key");
         if (savedUrl && savedKey) {
@@ -2029,8 +2031,6 @@
             console.warn("Saved config invalid");
           }
         }
-
-        // Show fallback config screen
         showScreen("fallback");
       }
 
@@ -2041,11 +2041,9 @@
           showToast("Enter both URL and Key", "error");
           return;
         }
-
         const btn = document.getElementById("btn-manual-connect");
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-sm"></span> Connecting...';
-
         try {
           initSupabase(url, key);
           const { error } = await db.from("sessions").select("id").limit(1);
@@ -2068,17 +2066,14 @@
       }
 
       /* ============================================
-   HOME SCREEN SETUP
+   HOME SCREEN & 0.30s STATS POLLING
    ============================================ */
       async function enterHomeScreen() {
         showScreen("home");
-
-        // Check localStorage for saved user
         const savedUser = localStorage.getItem("ss_user");
         if (savedUser) {
           try {
             const parsed = JSON.parse(savedUser);
-            // Verify user still exists in DB
             const { data, error } = await db
               .from("users")
               .select("user_id, name")
@@ -2093,18 +2088,20 @@
             localStorage.removeItem("ss_user");
           }
         }
-
         updateHomeUI();
         await loadStats();
 
-        // URL param: join link
+        // Start 0.30 second (300ms) polling for live stats update
+        clearInterval(statsPolling);
+        statsPolling = setInterval(loadStats, 300);
+
         const params = new URLSearchParams(window.location.search);
         const joinParam = params.get("join");
         if (joinParam) {
           setTimeout(() => {
             if (!state.user) {
               state.pendingAction = "join";
-              showToast("Please sign in to join a session", "info");
+              showToast("Please sign in to join", "info");
               showModal("modal-signin");
               document.getElementById("input-join-id") &&
                 (document.getElementById("input-join-id").value =
@@ -2147,31 +2144,29 @@
       }
 
       async function loadStats() {
+        if (!db) return;
         try {
-          // User count
           const { count: userCount } = await db
             .from("users")
             .select("*", { count: "exact", head: true });
-          const uc = userCount || 0;
-          document.getElementById("stat-users").textContent =
-            uc.toLocaleString();
-          document.getElementById("nav-user-count").textContent =
-            uc.toLocaleString();
+          document.getElementById("stat-users").textContent = (
+            userCount || 0
+          ).toLocaleString();
+          document.getElementById("nav-user-count").textContent = (
+            userCount || 0
+          ).toLocaleString();
 
-          // Session count
           const { count: sessionCount } = await db
             .from("sessions")
             .select("*", { count: "exact", head: true });
           document.getElementById("stat-sessions").textContent = (
             sessionCount || 0
           ).toLocaleString();
-        } catch (err) {
-          console.error("Stats error:", err);
-        }
+        } catch (err) {}
       }
 
       /* ============================================
-   AUTH: SIGN UP
+   AUTH
    ============================================ */
       async function signUp() {
         const name = document.getElementById("input-signup-name").value.trim();
@@ -2180,59 +2175,44 @@
           .value.trim()
           .toLowerCase();
         const pass = document.getElementById("input-signup-pass").value;
-
         if (!name) {
           showToast("Enter your name", "error");
           return;
         }
         if (!uid || uid.length < 3) {
-          showToast("User ID must be at least 3 characters", "error");
+          showToast("User ID must be ≥ 3 chars", "error");
           return;
         }
         if (!pass || pass.length < 4) {
-          showToast("Password must be at least 4 characters", "error");
+          showToast("Password must be ≥ 4 chars", "error");
           return;
         }
         if (!/^[a-z0-9_]+$/.test(uid)) {
-          showToast(
-            "User ID: only lowercase letters, numbers, underscore",
-            "error",
-          );
+          showToast("User ID: lowercase, numbers, underscore only", "error");
           return;
         }
 
         const btn = document.getElementById("btn-signup");
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-sm"></span> Creating account...';
-
+        btn.innerHTML = '<span class="spinner-sm"></span> Creating...';
         try {
           const hashedPass = await hashPassword(pass);
           const { data, error } = await db
             .from("users")
-            .insert({
-              user_id: uid,
-              name,
-              password: hashedPass,
-            })
+            .insert({ user_id: uid, name, password: hashedPass })
             .select()
             .single();
-
           if (error) {
-            if (error.code === "23505") {
-              showToast("This User ID is already taken. Try another.", "error");
-            } else throw error;
+            if (error.code === "23505")
+              showToast("User ID already taken", "error");
+            else throw error;
             return;
           }
-
           state.user = { userId: uid, name };
           localStorage.setItem("ss_user", JSON.stringify(state.user));
-
           closeModal("modal-signup");
-          showToast("Account created! Welcome, " + name, "success");
+          showToast("Welcome, " + name + "!", "success");
           updateHomeUI();
-          await loadStats();
-
-          // Continue pending action
           if (state.pendingAction === "create") {
             state.pendingAction = null;
             setTimeout(() => showCreateModal(), 400);
@@ -2241,24 +2221,19 @@
             setTimeout(() => showJoinModal(), 400);
           }
         } catch (err) {
-          console.error("Sign up error:", err);
-          showToast("Sign up failed: " + err.message, "error");
+          showToast("Failed: " + err.message, "error");
         } finally {
           btn.disabled = false;
           btn.textContent = "Sign Up";
         }
       }
 
-      /* ============================================
-   AUTH: SIGN IN
-   ============================================ */
       async function signIn() {
         const uid = document
           .getElementById("input-signin-uid")
           .value.trim()
           .toLowerCase();
         const pass = document.getElementById("input-signin-pass").value;
-
         if (!uid || !pass) {
           showToast("Enter User ID and Password", "error");
           return;
@@ -2267,7 +2242,6 @@
         const btn = document.getElementById("btn-signin");
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-sm"></span> Signing in...';
-
         try {
           const hashedPass = await hashPassword(pass);
           const { data, error } = await db
@@ -2275,7 +2249,6 @@
             .select("user_id, name, password")
             .eq("user_id", uid)
             .single();
-
           if (error || !data) {
             showToast("User ID not found", "error");
             return;
@@ -2284,15 +2257,11 @@
             showToast("Incorrect password", "error");
             return;
           }
-
           state.user = { userId: data.user_id, name: data.name };
           localStorage.setItem("ss_user", JSON.stringify(state.user));
-
           closeModal("modal-signin");
           showToast("Welcome back, " + data.name + "!", "success");
           updateHomeUI();
-
-          // Continue pending action
           if (state.pendingAction === "create") {
             state.pendingAction = null;
             setTimeout(() => showCreateModal(), 400);
@@ -2301,8 +2270,7 @@
             setTimeout(() => showJoinModal(), 400);
           }
         } catch (err) {
-          console.error("Sign in error:", err);
-          showToast("Sign in failed", "error");
+          showToast("Failed", "error");
         } finally {
           btn.disabled = false;
           btn.textContent = "Sign In";
@@ -2317,22 +2285,21 @@
       }
 
       /* ============================================
-   SESSION ACTION HANDLERS
+   SESSION HANDLERS
    ============================================ */
       function handleCreateSession() {
         if (!state.user) {
           state.pendingAction = "create";
-          showToast("Please sign up to create sessions", "info");
+          showToast("Please sign up", "info");
           showModal("modal-signup");
           return;
         }
         showCreateModal();
       }
-
       function handleJoinSession() {
         if (!state.user) {
           state.pendingAction = "join";
-          showToast("Please sign in to join sessions", "info");
+          showToast("Please sign in", "info");
           showModal("modal-signin");
           return;
         }
@@ -2357,7 +2324,6 @@
       function closeModalOutside(e, id) {
         if (e.target === document.getElementById(id)) closeModal(id);
       }
-
       function showCreateModal() {
         document.getElementById("generated-id").textContent =
           generateSessionId();
@@ -2371,7 +2337,7 @@
       }
 
       /* ============================================
-   SESSION: CREATE & JOIN
+   SESSION CREATE & JOIN
    ============================================ */
       function generateSessionId() {
         const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -2380,12 +2346,11 @@
           id += c[Math.floor(Math.random() * c.length)];
         return id;
       }
-
-      async function hashPassword(password) {
-        const data = new TextEncoder().encode(password + "syncspace_salt_2024");
-        const buf = await crypto.subtle.digest("SHA-256", data);
-        return Array.from(new Uint8Array(buf))
-          .map((b) => b.toString(16).padStart(2, "0"))
+      async function hashPassword(p) {
+        const d = new TextEncoder().encode(p + "syncspace_salt_2024");
+        const b = await crypto.subtle.digest("SHA-256", d);
+        return Array.from(new Uint8Array(b))
+          .map((x) => x.toString(16).padStart(2, "0"))
           .join("");
       }
 
@@ -2393,24 +2358,22 @@
         const sessionId = document.getElementById("generated-id").textContent;
         const password = document.getElementById("input-create-pass").value;
         if (!password || password.length < 3) {
-          showToast("Password must be at least 3 characters", "error");
+          showToast("Password must be ≥ 3 chars", "error");
           return;
         }
-
         const btn = document.getElementById("btn-create-session");
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-sm"></span> Creating...';
-
         try {
-          const hashedPass = await hashPassword(password);
+          const hp = await hashPassword(password);
           const { data, error } = await db
             .from("sessions")
-            .insert({ id: sessionId, password: hashedPass })
+            .insert({ id: sessionId, password: hp })
             .select()
             .single();
           if (error) {
             if (error.code === "23505") {
-              showToast("ID collision, try again", "error");
+              showToast("ID collision, retry", "error");
               document.getElementById("generated-id").textContent =
                 generateSessionId();
             } else throw error;
@@ -2435,14 +2398,12 @@
           .toUpperCase();
         const password = document.getElementById("input-join-pass").value;
         if (!sessionId || !password) {
-          showToast("Enter both Session ID and Password", "error");
+          showToast("Enter both ID and Password", "error");
           return;
         }
-
         const btn = document.getElementById("btn-join-session");
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-sm"></span> Joining...';
-
         try {
           const { data: session, error } = await db
             .from("sessions")
@@ -2453,19 +2414,17 @@
             showToast("Session not found", "error");
             return;
           }
-
-          const hashedPass = await hashPassword(password);
-          if (session.password !== hashedPass) {
+          const hp = await hashPassword(password);
+          if (session.password !== hp) {
             showToast("Incorrect password", "error");
             return;
           }
-
           state.sessionId = sessionId;
           closeModal("modal-join");
-          showToast("Joined session: " + sessionId, "success");
+          showToast("Joined: " + sessionId, "success");
           enterWorkspace();
         } catch (err) {
-          showToast("Failed: " + err.message, "error");
+          showToast("Failed", "error");
         } finally {
           btn.disabled = false;
           btn.textContent = "Join Session";
@@ -2482,19 +2441,21 @@
         state.files = {};
         showScreen("home");
         loadStats();
-        showToast("Left the session", "info");
+        showToast("Left session", "info");
       }
 
       /* ============================================
    WORKSPACE
    ============================================ */
       async function enterWorkspace() {
+        // Stop home stats polling while in workspace (Realtime handles workspace)
+        clearInterval(statsPolling);
+
         showScreen("workspace");
         document.getElementById("ws-session-id").textContent = state.sessionId;
-        if (state.user) {
+        if (state.user)
           document.getElementById("ws-user-display").innerHTML =
             '<i class="fas fa-user"></i> ' + escapeHtml(state.user.name);
-        }
         state.sectionId = null;
         state.sections = [];
         state.texts = {};
@@ -2521,9 +2482,7 @@
             renderSections();
             selectSection(data.id);
           }
-        } catch (err) {
-          console.error(err);
-        }
+        } catch (err) {}
       }
 
       /* ============================================
@@ -2540,16 +2499,13 @@
             state.sections = data;
             renderSections();
           }
-        } catch (err) {
-          console.error(err);
-        }
+        } catch (err) {}
       }
-
       async function addSection() {
         const inp = document.getElementById("input-section-name");
         const name = inp.value.trim();
         if (!name) {
-          showToast("Enter a section name", "error");
+          showToast("Enter a name", "error");
           return;
         }
         try {
@@ -2568,12 +2524,11 @@
           selectSection(data.id);
           closeModal("modal-section");
           inp.value = "";
-          showToast('Section "' + name + '" created', "success");
+          showToast('"' + name + '" created', "success");
         } catch (err) {
-          showToast("Failed to create section", "error");
+          showToast("Failed", "error");
         }
       }
-
       async function deleteSection(sid, e) {
         e.stopPropagation();
         const sec = state.sections.find((s) => s.id === sid);
@@ -2590,9 +2545,9 @@
             else showNoSection();
           }
           renderSections();
-          showToast("Section deleted", "info");
+          showToast("Deleted", "info");
         } catch (err) {
-          showToast("Failed to delete", "error");
+          showToast("Failed", "error");
         }
       }
 
@@ -2608,7 +2563,6 @@
         loadText(sid);
         loadFiles(sid);
       }
-
       function showSectionContent() {
         document.getElementById("no-section-state").style.display = "none";
         document.getElementById("section-content").style.display = "flex";
@@ -2629,12 +2583,7 @@
           .map((s) => {
             const a = s.id === state.sectionId;
             const fc = (state.files[s.id] || []).length;
-            return `<div class="section-item ${a ? "active" : ""}" onclick="selectSection('${s.id}')">
-            <span class="sec-icon"><i class="fas fa-file-lines"></i></span>
-            <span class="sec-name">${escapeHtml(s.name)}</span>
-            ${fc > 0 ? `<span class="sec-badge">${fc}</span>` : ""}
-            <button class="sec-delete" onclick="deleteSection('${s.id}',event)"><i class="fas fa-trash-can"></i></button>
-        </div>`;
+            return `<div class="section-item ${a ? "active" : ""}" onclick="selectSection('${s.id}')"><span class="sec-icon"><i class="fas fa-file-lines"></i></span><span class="sec-name">${escapeHtml(s.name)}</span>${fc > 0 ? `<span class="sec-badge">${fc}</span>` : ""}<button class="sec-delete" onclick="deleteSection('${s.id}',event)"><i class="fas fa-trash-can"></i></button></div>`;
           })
           .join("");
       }
@@ -2667,11 +2616,8 @@
             } catch (e) {}
           }
           updateCounts();
-        } catch (err) {
-          console.error(err);
-        }
+        } catch (err) {}
       }
-
       async function saveText(sid, content) {
         if (!sid) return;
         try {
@@ -2687,7 +2633,6 @@
           setSaveStatus("saved");
         }
       }
-
       function onTextInput() {
         updateCounts();
         clearTimeout(state.debounceTimer);
@@ -2705,7 +2650,6 @@
           }
         }, 600);
       }
-
       function setSaveStatus(s) {
         const el = document.getElementById("save-indicator");
         if (s === "saving") {
@@ -2716,7 +2660,6 @@
           el.innerHTML = '<i class="fas fa-check-circle"></i> Saved';
         }
       }
-
       function updateCounts() {
         const t = document.getElementById("ws-textarea").value;
         document.getElementById("char-count").textContent =
@@ -2724,7 +2667,6 @@
         document.getElementById("word-count").textContent =
           (t.trim() ? t.trim().split(/\s+/).length : 0) + " words";
       }
-
       function copyAllText() {
         const t = document.getElementById("ws-textarea").value;
         if (!t) {
@@ -2760,7 +2702,7 @@
       }
 
       /* ============================================
-   FILES
+   FILES (WITH VIEW IN BROWSER)
    ============================================ */
       async function loadFiles(sid) {
         try {
@@ -2774,9 +2716,7 @@
             renderFiles();
             renderSections();
           }
-        } catch (err) {
-          console.error(err);
-        }
+        } catch (err) {}
       }
 
       async function handleFileUpload(fileList) {
@@ -2827,6 +2767,37 @@
         });
       }
 
+      // ★ VIEW FILE IN BROWSER WITHOUT DOWNLOADING ★
+      function viewFileItem(fileId) {
+        const allFiles = Object.values(state.files).flat();
+        const file = allFiles.find((f) => f.id === fileId);
+        if (!file || !file.file_data) return;
+
+        try {
+          // Convert Base64 to Blob for reliable browser viewing
+          const byteString = atob(file.file_data.split(",")[1]);
+          const mimeString = file.file_data
+            .split(",")[0]
+            .split(":")[1]
+            .split(";")[0];
+          const ab = new ArrayBuffer(byteString.length);
+          const ia = new Uint8Array(ab);
+          for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+          }
+          const blob = new Blob([ab], { type: mimeString });
+          const url = URL.createObjectURL(blob);
+
+          // Open in new tab (Browser will display PDFs, Images, Text natively)
+          window.open(url, "_blank");
+          showToast("Opening in browser...", "info");
+        } catch (err) {
+          console.error("View error:", err);
+          // Fallback to direct base64 open if blob fails
+          window.open(file.file_data, "_blank");
+        }
+      }
+
       async function downloadFileItem(fid) {
         const f = Object.values(state.files)
           .flat()
@@ -2848,9 +2819,9 @@
             state.files[sid] = state.files[sid].filter((f) => f.id !== fid);
           renderFiles();
           renderSections();
-          showToast("File deleted", "info");
+          showToast("Deleted", "info");
         } catch (err) {
-          showToast("Failed to delete", "error");
+          showToast("Failed", "error");
         }
       }
 
@@ -2862,6 +2833,8 @@
             '<div style="text-align:center;padding:2rem;color:var(--text-muted);font-size:.82rem"><i class="fas fa-inbox" style="font-size:1.3rem;margin-bottom:.4rem;display:block;opacity:.4"></i>No files yet</div>';
           return;
         }
+
+        // ★ Added View Button ★
         list.innerHTML = files
           .map((f) => {
             const ic = getFileIcon(f.file_name, f.file_type);
@@ -2869,8 +2842,9 @@
             <div class="file-icon ${ic.cls}"><i class="${ic.icon}"></i></div>
             <div class="file-info"><div class="file-name" title="${escapeHtml(f.file_name)}">${escapeHtml(f.file_name)}</div><div class="file-meta">${formatFileSize(f.file_size)} &middot; ${timeAgo(new Date(f.created_at))}</div></div>
             <div class="file-actions">
-                <button onclick="downloadFileItem('${f.id}')"><i class="fas fa-download"></i></button>
-                <button class="del-btn" onclick="deleteFileItem('${f.id}')"><i class="fas fa-trash-can"></i></button>
+                <button class="view-btn" onclick="viewFileItem('${f.id}')" title="View in Browser"><i class="fas fa-eye"></i></button>
+                <button onclick="downloadFileItem('${f.id}')" title="Download"><i class="fas fa-download"></i></button>
+                <button class="del-btn" onclick="deleteFileItem('${f.id}')" title="Delete"><i class="fas fa-trash-can"></i></button>
             </div></div>`;
           })
           .join("");
@@ -2915,7 +2889,6 @@
       function setupRealtime() {
         cleanupRealtime();
         const ch = db.channel("session-" + state.sessionId);
-
         ch.on(
           "postgres_changes",
           {
@@ -2945,7 +2918,6 @@
             }
           },
         );
-
         ch.on(
           "postgres_changes",
           {
@@ -2968,7 +2940,6 @@
             }
           },
         );
-
         ch.on(
           "postgres_changes",
           {
@@ -2998,7 +2969,6 @@
             }
           },
         );
-
         ch.subscribe((status) => console.log("Realtime:", status));
         state.subscriptions.push(ch);
       }
@@ -3014,7 +2984,7 @@
       }
 
       /* ============================================
-   SHARE & SIDEBAR
+   UTILITIES
    ============================================ */
       function shareLink() {
         copyToClipboard(
@@ -3041,9 +3011,6 @@
         }
       }
 
-      /* ============================================
-   UTILITIES
-   ============================================ */
       function copyToClipboard(text, label) {
         navigator.clipboard
           .writeText(text)
@@ -3058,7 +3025,6 @@
             showToast(label + " copied!", "success");
           });
       }
-
       function showToast(msg, type = "info") {
         const c = document.getElementById("toast-container");
         const icons = {
@@ -3075,7 +3041,6 @@
           setTimeout(() => t.remove(), 250);
         }, 3000);
       }
-
       function escapeHtml(s) {
         const d = document.createElement("div");
         d.textContent = s;
@@ -3101,7 +3066,6 @@
         if (h < 24) return h + "h ago";
         return Math.floor(h / 24) + "d ago";
       }
-
       function createParticles(id, count) {
         const c = document.getElementById(id);
         if (!c) return;
