@@ -1,0 +1,16 @@
+syncspace/
+├── server.js              # Main Express server (all APIs)
+├── package.json           # Dependencies
+├── .env.example           # Environment template (NO real keys)
+├── vercel.json            # Vercel deployment config
+├── .gitignore             # Git ignore file
+├── README.md
+├── file-structure.txt     # Plain text project structure
+├── public/
+│   ├── index.html         # Main app HTML
+│   ├── app.js             # Complete frontend logic
+│   ├── style.css          # All styles (Dark/Light theme)
+│   ├── manifest.json      # PWA manifest
+│   └── sw.js              # Service Worker
+└── supabase/
+    └── schema.sql         # Database schema
