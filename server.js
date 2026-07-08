@@ -28,7 +28,7 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:"],
@@ -43,15 +43,10 @@ app.use(
   }),
 );
 
-// CORS - Only allow specific origins
-const allowedOrigins =
-  process.env.NODE_ENV === "production"
-    ? ["https://yourdomain.com", "https://yourdomain.vercel.app"]
-    : ["http://localhost:3000", "http://localhost:5173"];
-
+// CORS - Allow all origins for development
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: true,
     credentials: true,
     optionsSuccessStatus: 200,
   }),
@@ -98,37 +93,85 @@ app.get("/api/health", (req, res) => {
 
 // ========== AUTH ROUTES ==========
 app.post("/api/auth", async (req, res) => {
+  // ========== DEBUG LOGS ==========
+  console.log("=== AUTH REQUEST ===");
+  console.log("Body:", JSON.stringify(req.body, null, 2));
+  console.log("Supabase URL:", process.env.SUPABASE_URL ? "Set" : "Not set");
+  console.log(
+    "Supabase Key:",
+    process.env.SUPABASE_ANON_KEY ? "Set" : "Not set",
+  );
+  console.log("=========================================");
+  // ========== END DEBUG LOGS ==========
+
   const { action, userId, name, password, tempToken, code } = req.body;
+
+  // Log the request for debugging
+  console.log("Auth request:", {
+    action,
+    userId,
+    name: name || "not provided",
+  });
 
   try {
     // SIGNUP
     if (action === "signup") {
+      console.log("Processing signup for:", userId);
+
       if (!userId || !name || !password) {
+        console.log("Missing fields:", {
+          userId: !!userId,
+          name: !!name,
+          password: !!password,
+        });
         return res.status(400).json({ error: "All fields required" });
       }
+
       if (password.length < 6) {
         return res
           .status(400)
           .json({ error: "Password must be at least 6 characters" });
       }
 
-      const hash = await bcrypt.hash(password, 10);
-      const { error } = await supabase
+      // Check if user already exists
+      const { data: existingUser, error: checkError } = await supabase
         .from("users")
-        .insert({ user_id: userId, name, password: hash });
+        .select("user_id")
+        .eq("user_id", userId)
+        .single();
+
+      if (existingUser) {
+        return res.status(400).json({ error: "User already exists" });
+      }
+
+      const hash = await bcrypt.hash(password, 10);
+
+      // Insert user - using direct insert without RLS issues
+      const { data, error } = await supabase
+        .from("users")
+        .insert([
+          {
+            user_id: userId,
+            name: name,
+            password: hash,
+            role: "editor",
+          },
+        ])
+        .select();
 
       if (error) {
-        if (error.code === "23505") {
-          return res.status(400).json({ error: "User already exists" });
-        }
+        console.error("Supabase insert error:", error);
         return res.status(400).json({ error: error.message });
       }
 
+      console.log("User created successfully:", userId);
       return res.json({ message: "User created successfully" });
     }
 
     // LOGIN
     if (action === "login") {
+      console.log("Processing login for:", userId);
+
       if (!userId || !password) {
         return res.status(400).json({ error: "All fields required" });
       }
@@ -140,11 +183,13 @@ app.post("/api/auth", async (req, res) => {
         .single();
 
       if (error || !user) {
+        console.log("User not found:", userId);
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
       const isValid = await bcrypt.compare(password, user.password);
       if (!isValid) {
+        console.log("Invalid password for:", userId);
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
@@ -239,7 +284,9 @@ app.post("/api/auth", async (req, res) => {
     return res.status(400).json({ error: "Invalid action" });
   } catch (err) {
     console.error("Auth error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res
+      .status(500)
+      .json({ error: "Internal server error: " + err.message });
   }
 });
 
@@ -810,9 +857,20 @@ app.get("/api/stats", async (req, res) => {
 
 // ========== CONFIG ==========
 app.get("/api/config", (req, res) => {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    console.warn("Missing Supabase environment variables");
+    return res.status(500).json({
+      error: "Server configuration incomplete",
+      details: "Missing SUPABASE_URL or SUPABASE_ANON_KEY",
+    });
+  }
+
   res.json({
-    url: process.env.SUPABASE_URL,
-    key: process.env.SUPABASE_ANON_KEY,
+    url: url,
+    key: key,
   });
 });
 
