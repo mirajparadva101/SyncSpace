@@ -2,7 +2,8 @@
    SYNCSPACE — APPLICATION LOGIC
    ============================================ */
 
-import { createClient } from "@supabase/supabase-js";
+// Load Supabase from CDN dynamically
+let supabaseClient = null;
 
 // ========== STATE ==========
 const state = {
@@ -134,15 +135,50 @@ function toggleTheme() {
   showToast(`Switched to ${state.theme} mode`, "info", 2000);
 }
 
+// ========== LOAD SUPABASE ==========
+async function loadSupabase() {
+  if (window.supabase) {
+    return window.supabase;
+  }
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src =
+      "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js";
+    script.onload = () => {
+      resolve(window.supabase);
+    };
+    script.onerror = () => {
+      reject(new Error("Failed to load Supabase library"));
+    };
+    document.head.appendChild(script);
+  });
+}
+
 // ========== INIT ==========
 async function init() {
   document.documentElement.setAttribute("data-theme", state.theme);
 
   try {
-    const config = await fetch("/api/config").then((r) => r.json());
-    if (!config?.url) throw new Error("No config");
+    // Load Supabase library first
+    await loadSupabase();
+    console.log("Supabase library loaded");
 
-    state.sb = createClient(config.url, config.key);
+    console.log("Fetching config from /api/config...");
+    const response = await fetch("/api/config");
+
+    if (!response.ok) {
+      throw new Error(`Config fetch failed: ${response.status}`);
+    }
+
+    const config = await response.json();
+    console.log("Config received:", config);
+
+    if (!config?.url || !config?.key) {
+      throw new Error("Missing Supabase credentials in config");
+    }
+
+    state.sb = window.supabase.createClient(config.url, config.key);
     setupRealtime();
 
     const params = new URLSearchParams(window.location.search);
@@ -158,11 +194,16 @@ async function init() {
     setupSessionTimeout();
     registerSW();
     setupGlobalListeners();
-  } catch (err) {
-    showManualConfig();
-  }
 
-  setTimeout(hideLoader, 1500);
+    // Hide loader after successful init
+    setTimeout(hideLoader, 500);
+  } catch (err) {
+    console.error("Init error:", err);
+    // Show manual config if we can't fetch from server
+    showManualConfig();
+    // Still hide loader after showing config
+    setTimeout(hideLoader, 800);
+  }
 }
 
 // ========== GLOBAL LISTENERS ==========
@@ -1880,14 +1921,14 @@ function showTemplates() {
 function showManualConfig() {
   const app = $("#app");
   app.innerHTML = `
-    <div class="overlay active">
+    <div class="overlay active" id="config-overlay">
       <div class="modal">
         <div class="modal-header">
           <div class="modal-logo" style="background: linear-gradient(135deg, var(--warning), #e17055);">
             <i class="fas fa-gear"></i>
           </div>
-          <h1 class="modal-title">Setup Required</h1>
-          <p class="modal-subtitle">Enter your Supabase credentials to connect</p>
+          <h1 class="modal-title">Manual Setup Required</h1>
+          <p class="modal-subtitle">Enter your Supabase credentials to connect. You can get these from your Supabase dashboard.</p>
         </div>
         <div class="config-grid">
           <div class="input-group" style="margin-bottom:0;">
@@ -1903,6 +1944,9 @@ function showManualConfig() {
           <i class="fas fa-plug"></i>
           Connect
         </button>
+        <div class="modal-footer" style="margin-top:var(--space-lg);">
+          <p class="text-xs text-muted">Credentials are stored locally in your browser</p>
+        </div>
       </div>
     </div>`;
 }
@@ -1915,10 +1959,36 @@ function saveManualConfig() {
     return showToast("Both fields are required", "error");
   }
 
+  try {
+    new URL(url);
+  } catch (e) {
+    return showToast("Invalid Supabase URL format", "error");
+  }
+
   localStorage.setItem("sb_url", url);
   localStorage.setItem("sb_key", key);
-  showToast("Configuration saved! Reloading...", "success");
-  setTimeout(() => location.reload(), 1500);
+
+  if (window.supabase) {
+    state.sb = window.supabase.createClient(url, key);
+    setupRealtime();
+    checkAuth();
+    setupKeyboardShortcuts();
+    setupSessionTimeout();
+    registerSW();
+    setupGlobalListeners();
+  } else {
+    // If supabase isn't loaded yet, reload to load it
+    location.reload();
+    return;
+  }
+
+  const overlay = document.getElementById("config-overlay");
+  if (overlay) {
+    overlay.classList.remove("active");
+    setTimeout(() => overlay.remove(), 300);
+  }
+
+  showToast("Configuration saved! Connected successfully.", "success");
 }
 
 // ========== GLOBALIZE ==========
