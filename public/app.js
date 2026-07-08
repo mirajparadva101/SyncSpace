@@ -265,21 +265,21 @@ function showAuth() {
 
         <div class="input-group">
           <div class="input-wrapper">
-            <input type="text" id="auth-userid" class="input has-icon" placeholder="User ID" aria-label="User ID" autocomplete="username">
+            <input type="text" id="auth-userid" class="input has-icon" placeholder="User ID" aria-label="User ID" autocomplete="username" value="">
             <i class="fas fa-at input-icon"></i>
           </div>
         </div>
 
         <div class="input-group">
           <div class="input-wrapper">
-            <input type="text" id="auth-name" class="input has-icon" placeholder="Full Name" aria-label="Full Name" autocomplete="name">
+            <input type="text" id="auth-name" class="input has-icon" placeholder="Full Name (for signup)" aria-label="Full Name" autocomplete="name" value="">
             <i class="fas fa-user input-icon"></i>
           </div>
         </div>
 
         <div class="input-group">
           <div class="input-wrapper">
-            <input type="password" id="auth-pass" class="input has-icon" placeholder="Password" aria-label="Password" autocomplete="current-password">
+            <input type="password" id="auth-pass" class="input has-icon" placeholder="Password (min 6 chars)" aria-label="Password" autocomplete="current-password" value="">
             <i class="fas fa-lock input-icon"></i>
           </div>
         </div>
@@ -305,41 +305,151 @@ function showAuth() {
       </div>
     </div>`;
 
-  $("#auth-login").onclick = () => authAction("login");
-  $("#auth-signup").onclick = () => authAction("signup");
-  $("#auth-join-session").onclick = () => {
-    const sid = prompt("Enter Session ID:");
-    if (sid) {
-      state.sessionId = sid.toUpperCase();
-      localStorage.setItem("ss_session", state.sessionId);
-      showToast("Session ID set! Please sign in.", "info");
-    }
-  };
+  // Get references to buttons
+  const loginBtn = document.getElementById("auth-login");
+  const signupBtn = document.getElementById("auth-signup");
+  const joinBtn = document.getElementById("auth-join-session");
 
-  // Enter key support
-  ["auth-userid", "auth-name", "auth-pass"].forEach((id) => {
-    $(`#${id}`)?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") authAction("login");
+  // Add click handlers
+  if (loginBtn) {
+    loginBtn.onclick = function (e) {
+      e.preventDefault();
+      authAction("login");
+    };
+  }
+
+  if (signupBtn) {
+    signupBtn.onclick = function (e) {
+      e.preventDefault();
+      authAction("signup");
+    };
+  }
+
+  if (joinBtn) {
+    joinBtn.onclick = function (e) {
+      e.preventDefault();
+      const sid = prompt("Enter Session ID:");
+      if (sid) {
+        state.sessionId = sid.toUpperCase();
+        localStorage.setItem("ss_session", state.sessionId);
+        showToast("Session ID set! Please sign in.", "info");
+      }
+    };
+  }
+
+  // Enter key support - use event listeners
+  const userIdInput = document.getElementById("auth-userid");
+  const nameInput = document.getElementById("auth-name");
+  const passInput = document.getElementById("auth-pass");
+
+  if (userIdInput) {
+    userIdInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        // If on signup, move to name field, else move to password
+        if (document.activeElement === userIdInput) {
+          if (passInput) passInput.focus();
+        }
+      }
     });
-  });
+  }
+
+  if (nameInput) {
+    nameInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (passInput) passInput.focus();
+      }
+    });
+  }
+
+  if (passInput) {
+    passInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        // Determine which button to click based on what's visible
+        // Default to login
+        authAction("login");
+      }
+    });
+  }
+
+  // Auto-focus the first input
+  setTimeout(() => {
+    if (userIdInput) userIdInput.focus();
+  }, 300);
 }
 
 async function authAction(type) {
-  const userId = $("#auth-userid")?.value.trim();
-  const name = $("#auth-name")?.value.trim();
-  const password = $("#auth-pass")?.value;
+  console.log("Auth action:", type);
 
+  // Get input elements directly
+  const userIdInput = document.getElementById("auth-userid");
+  const nameInput = document.getElementById("auth-name");
+  const passInput = document.getElementById("auth-pass");
+
+  // Get values with proper trimming
+  const userId = userIdInput ? userIdInput.value.trim() : "";
+  const name = nameInput ? nameInput.value.trim() : "";
+  const password = passInput ? passInput.value : "";
+
+  console.log(
+    "UserId:",
+    userId,
+    "Name:",
+    name,
+    "Password length:",
+    password.length,
+  );
+
+  // Validation
   if (!userId || !password) {
-    return showToast("User ID and password are required", "error");
-  }
-  if (type === "signup" && !name) {
-    return showToast("Full name is required for signup", "error");
-  }
-  if (password.length < 6) {
-    return showToast("Password must be at least 6 characters", "error");
+    showToast("User ID and password are required", "error");
+    // Highlight empty fields
+    if (!userId && userIdInput) {
+      userIdInput.classList.add("input-error");
+      userIdInput.focus();
+      setTimeout(() => userIdInput.classList.remove("input-error"), 2000);
+    }
+    if (!password && passInput) {
+      passInput.classList.add("input-error");
+      if (!userId) passInput.focus();
+      setTimeout(() => passInput.classList.remove("input-error"), 2000);
+    }
+    return;
   }
 
-  const btn = type === "login" ? $("#auth-login") : $("#auth-signup");
+  if (type === "signup" && !name) {
+    showToast("Full name is required for signup", "error");
+    if (nameInput) {
+      nameInput.classList.add("input-error");
+      nameInput.focus();
+      setTimeout(() => nameInput.classList.remove("input-error"), 2000);
+    }
+    return;
+  }
+
+  if (password.length < 6) {
+    showToast("Password must be at least 6 characters", "error");
+    if (passInput) {
+      passInput.classList.add("input-error");
+      passInput.focus();
+      setTimeout(() => passInput.classList.remove("input-error"), 2000);
+    }
+    return;
+  }
+
+  // Get button references
+  const btn =
+    type === "login"
+      ? document.getElementById("auth-login")
+      : document.getElementById("auth-signup");
+
+  if (!btn) {
+    console.error("Button not found for type:", type);
+    return;
+  }
+
   const originalHTML = btn.innerHTML;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Please wait...';
   btn.disabled = true;
@@ -348,23 +458,34 @@ async function authAction(type) {
     const res = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: type, userId, name, password }),
-    }).then((r) => r.json());
+      body: JSON.stringify({
+        action: type,
+        userId,
+        name: type === "signup" ? name : undefined,
+        password,
+      }),
+    });
 
-    if (res.error) {
-      showToast(res.error, "error");
+    const data = await res.json();
+    console.log("Auth response:", data);
+
+    if (data.error) {
+      showToast(data.error, "error");
       btn.innerHTML = originalHTML;
       btn.disabled = false;
       return;
     }
 
-    if (res.require2FA) {
-      return show2FA(res.tempToken);
+    if (data.require2FA) {
+      show2FA(data.tempToken);
+      btn.innerHTML = originalHTML;
+      btn.disabled = false;
+      return;
     }
 
-    localStorage.setItem("ss_token", res.token);
-    localStorage.setItem("ss_user", JSON.stringify(res.user));
-    state.user = res.user;
+    localStorage.setItem("ss_token", data.token);
+    localStorage.setItem("ss_user", JSON.stringify(data.user));
+    state.user = data.user;
 
     if (!state.sessionId) {
       const sid = prompt("Enter Session ID to create or join:", generateId());
@@ -376,8 +497,9 @@ async function authAction(type) {
     }
 
     showDashboard();
-    showToast(`Welcome back, ${state.user.name}!`, "success");
+    showToast(`Welcome, ${state.user.name}!`, "success");
   } catch (err) {
+    console.error("Auth error:", err);
     showToast("Network error. Please try again.", "error");
     btn.innerHTML = originalHTML;
     btn.disabled = false;
