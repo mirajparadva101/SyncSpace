@@ -1,17 +1,14 @@
-const CACHE_NAME = "syncspace-v1";
-const STATIC_ASSETS = [
-  "/",
-  "/index.html",
-  "/style.css",
-  "/app.js",
-  "/manifest.json",
-];
+/* SyncSpace Service Worker — offline static asset support */
+const CACHE = "syncspace-v1";
+const ASSETS = ["/", "/index.html", "/style.css", "/app.js", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)),
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll(ASSETS))
+      .then(() => self.skipWaiting()),
   );
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
@@ -20,35 +17,39 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) =>
         Promise.all(
-          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)),
+          keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)),
         ),
-      ),
+      )
+      .then(() => self.clients.claim()),
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  const url = new URL(request.url);
+  if (request.method !== "GET") return;
 
-  // Supabase calls: network only
-  if (url.hostname.includes("supabase")) {
-    event.respondWith(fetch(request));
+  const url = new URL(request.url);
+  // Never cache API / Supabase
+  if (url.pathname.startsWith("/api/") || url.hostname.includes("supabase")) {
     return;
   }
 
-  // Static assets: stale-while-revalidate
   event.respondWith(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.match(request).then((cached) => {
-        const fetchPromise = fetch(request)
-          .then((response) => {
-            if (response.ok) cache.put(request, response.clone());
-            return response;
-          })
-          .catch(() => cached);
-        return cached || fetchPromise;
-      }),
-    ),
+    caches.match(request).then((cached) => {
+      const fetched = fetch(request)
+        .then((response) => {
+          if (
+            response &&
+            response.status === 200 &&
+            response.type === "basic"
+          ) {
+            const clone = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => cached);
+      return cached || fetched;
+    }),
   );
 });

@@ -1,315 +1,176 @@
-<div align="center">
+# SyncSpace
 
-# ⚡ SyncSpace
+**Real-Time Collaborative Workspace** with a modern glassmorphism UI.
 
-### Real-Time Collaborative Workspace
+Edit documents together, chat, manage tasks, sketch on a whiteboard, and share files — all in one dark, polished web app built with **HTML, CSS, and Vanilla JavaScript**.
 
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![Supabase](https://img.shields.io/badge/Supabase-Backend-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
-![Vercel](https://img.shields.io/badge/Vercel-Deployment-black?style=for-the-badge&logo=vercel&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)
-![JWT](https://img.shields.io/badge/JWT-Authentication-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white)
-![PWA](https://img.shields.io/badge/PWA-Supported-5A0FC8?style=for-the-badge)
-
-**SyncSpace** is a modern, secure, and real-time collaborative workspace that allows teams to share text notes, files, and chat instantly across multiple devices. It includes simplified user authentication (auto-account creation), real-time synchronization, and secure environment configuration.
-
-</div>
+![Stack](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white)
+![CSS3](https://img.shields.io/badge/CSS3-1572B6?logo=css3&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=black)
+![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?logo=supabase&logoColor=white)
+![Vercel](https://img.shields.io/badge/Vercel-000000?logo=vercel&logoColor=white)
 
 ---
 
-## ✨ Key Features
+## Features
 
-| Category                  | Features                                                                          |
-| ------------------------- | --------------------------------------------------------------------------------- |
-| **🔐 Authentication**     | Login with User ID & Password, Auto-account creation, JWT Tokens, 24-hour session |
-| **👥 Session Management** | Create/Join sessions with password, 6-char unique IDs, 30-min timeout             |
-| **📝 Real-time Editor**   | Rich text editing, Auto-save with debouncing, Version history, Typing indicators  |
-| **💬 Chat**               | Real-time messaging, Typing indicators, User presence, Message history            |
-| **📎 File Sharing**       | Upload images/PDFs/TXT (Max 2MB), Image compression, Preview support              |
-| **✅ Task Management**    | Create/complete/delete todos, Real-time sync across devices                       |
-| **🎨 Whiteboard**         | Draw with mouse/touch, Real-time collaboration, Pen/Eraser tools                  |
-| **📂 Organization**       | Create multiple sections, Drag-drop reordering, Search sections                   |
-| **🛡️ Security**           | Zero hardcoded API keys, Vercel Environment Variables, Rate limiting              |
-| **🎨 UI/UX**              | Dark/Light theme, Fully responsive, Mobile-friendly, PWA support                  |
-
----
-
-## 🛠️ Tech Stack
-
-### Frontend
-
-- **HTML5, CSS3** - Semantic markup, custom properties
-- **Vanilla JavaScript (ES6+)** - No frameworks needed
-- **Service Worker** - Offline support (PWA)
-- **Font Awesome 6** - Icons
-- **Inter** - Typography
-
-### Backend (Serverless)
-
-- **Vercel** - Serverless functions
-- **Supabase** - PostgreSQL database, Realtime WebSockets
-- **JWT** - Authentication tokens
-- **bcryptjs** - Password hashing
-
-### Security & Middleware
-
-- **Helmet.js** - Security headers
-- **express-rate-limit** - Rate limiting
-- **CORS** - Cross-origin resource sharing
-
-### Hosting
-
-- **Vercel** - Serverless deployment
+| Area           | What you get                                                               |
+| -------------- | -------------------------------------------------------------------------- |
+| **Landing**    | Glass hero, animated stats, features grid, how-it-works                    |
+| **Auth**       | User ID + password (SHA-256). If user missing → auto signup form           |
+| **Sessions**   | Create / join with 6-char ID + password, 30‑min timer, copy ID             |
+| **Editor**     | Rich text toolbar, sections, 800ms debounced auto-save, version history    |
+| **Chat**       | Real-time messages, avatars, date separators, unread badge                 |
+| **Tasks**      | Add / toggle / delete, progress bar, live stats                            |
+| **Whiteboard** | Pen, eraser, color, size, clear, touch + DPR scaling                       |
+| **Files**      | Drag & drop, preview, **download**, delete (max 2MB)                       |
+| **PWA**        | `manifest.json` + service worker offline cache for static assets           |
+| **Demo mode**  | Works **without** Supabase via `localStorage` (single browser / multi-tab) |
 
 ---
 
-## 📂 Project Structure
+## Project structure
 
-```text
+```
 syncspace/
-├── index.html                  # All HTML (Responsive UI)
-├── style.css                   # All CSS (Dark/Light theme, Mobile-first)
-├── app.js                      # Complete JavaScript (Auth + All Features)
-├── manifest.json               # PWA Support
-├── sw.js                       # Service Worker (Offline support)
-├── schema.sql                  # Supabase Database Schema
-├── vercel.json                 # Vercel Deployment Config
-├── README.md                   # Project Documentation
-└── file-structure.txt          # Plain text project structure
+├── index.html          # Landing + Auth + Hub + Dashboard
+├── style.css           # Glassmorphism design system
+├── app.js              # All application logic
+├── manifest.json       # PWA manifest
+├── sw.js               # Service worker
+├── schema.sql          # Supabase / PostgreSQL schema
+├── vercel.json         # Deploy config
+├── api/config.js       # Secure env config endpoint
+├── README.md
+└── file-structure.txt
 ```
 
 ---
 
-## 🚀 Getting Started
+## Quick start (Demo mode — no backend)
 
-### Prerequisites
-
-- Supabase account (free tier works)
-- Vercel account (free tier works)
-- GitHub account
-
-### 1. Supabase Database Setup
-
-1. Create a Supabase project.
-2. Run `schema.sql` in SQL Editor.
-3. Enable Realtime for these tables:
-   - `sections`
-   - `texts`
-   - `files`
-   - `chat_messages`
-   - `todos`
-4. Get API credentials:
-   - Project URL
-   - Anon Key
-
-### 2. Deploy to Vercel
-
-1. Push code to your GitHub repository.
-2. Import the repository into Vercel.
-3. Add these environment variables:
-
-| Name                | Value                              | Where to Get             |
-| ------------------- | ---------------------------------- | ------------------------ |
-| `SUPABASE_URL`      | `https://your-project.supabase.co` | Supabase Dashboard → API |
-| `SUPABASE_ANON_KEY` | `eyJhbGciOi...`                    | Supabase Dashboard → API |
-| `JWT_SECRET`        | `your-random-secret-key`           | Generate securely        |
-
-4. Click **Deploy**.
-
-### 3. Run Locally (Development)
+1. Open the folder in any static server, for example:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/yourusername/syncspace.git
 cd syncspace
-
-# 2. Install dependencies (if using backend)
-npm install
-
-# 3. Start the server
-npm start
-
-# 4. Open browser
-# http://localhost:3000
+npx --yes serve .
+# or: python -m http.server 3000
 ```
 
----
+2. Visit `http://localhost:3000`
+3. Click **Get Started** → enter any User ID + password
+   - First time: signup form opens automatically
+4. **Create Session** or **Join** with the 6-character ID
+5. Collaborate (same browser / multi-tab works via `localStorage`)
 
-## 🔒 Security Architecture
-
-```text
-┌──────────────┐         GET /api/config          ┌──────────────────────┐
-│              │ ───────────────────────────────► │                      │
-│  Client App  │                                   │  Vercel Serverless   │
-│ (index.html) │ ◄─────────────────────────────── │  (API Routes)        │
-│              │   { url, key } JSON Response      │                      │
-└──────────────┘                                   └──────────┬───────────┘
-                                                              │
-                                                   Reads from Vercel
-                                                   Environment Variables
-                                                   (SUPABASE_URL, SUPABASE_ANON_KEY)
-```
-
-### Security Features
-
-| Feature                | Implementation                                |
-| ---------------------- | --------------------------------------------- |
-| **No Hardcoded Keys**  | Supabase credentials in Vercel Dashboard only |
-| **Password Hashing**   | bcrypt (10 rounds)                            |
-| **JWT Authentication** | 24-hour expiration                            |
-| **Rate Limiting**      | 100 requests/15 min                           |
-| **Security Headers**   | Helmet.js (HSTS, CSP, XSS protection)         |
-| **CORS Protection**    | Restricted to specific origins                |
-| **File Validation**    | Type, size, format checking                   |
-| **Session Timeout**    | 30 minutes inactivity                         |
+> Demo mode stores users, sessions, chat, tasks, files, and board data in the browser.
 
 ---
 
-## 🎯 Features Deep Dive
+## Production setup (Supabase + Vercel)
 
-### Authentication & Security
+### 1. Supabase
 
-| Feature              | Description                                 |
-| -------------------- | ------------------------------------------- |
-| **Login**            | User ID + Password verification             |
-| **Auto-Signup**      | If user doesn't exist, auto-create account  |
-| **JWT Tokens**       | 24-hour valid tokens stored in localStorage |
-| **Session Timeout**  | Auto-logout after 30 minutes of inactivity  |
-| **Password Hashing** | bcrypt with 10 rounds                       |
+1. Create a project at [supabase.com](https://supabase.com)
+2. Open **SQL Editor** and run the full contents of `schema.sql`
+3. Copy **Project URL** and **anon public** key from **Settings → API**
+4. Confirm Realtime is enabled for: `sessions`, `sections`, `texts`, `chat_messages`, `todos`, `files`
 
-### Real-time Collaboration
+### 2. Environment variables (Vercel)
 
-| Feature               | Description                             |
-| --------------------- | --------------------------------------- |
-| **Rich Text Editor**  | ContentEditable with formatting support |
-| **Auto-save**         | Debounced save (800ms)                  |
-| **Version History**   | Each save creates a version entry       |
-| **Typing Indicators** | Shows who is typing in real-time        |
+| Name                | Value                     |
+| ------------------- | ------------------------- |
+| `SUPABASE_URL`      | Your Supabase project URL |
+| `SUPABASE_ANON_KEY` | Your Supabase anon key    |
 
-### Communication
-
-| Feature               | Description                         |
-| --------------------- | ----------------------------------- |
-| **Chat**              | Real-time messaging with user names |
-| **Typing Indicators** | Shows when others are typing        |
-| **Message History**   | Last 100 messages stored            |
-
-### File Management
-
-| Feature         | Description                          |
-| --------------- | ------------------------------------ |
-| **Upload**      | Images, PDFs, TXT files (max 2MB)    |
-| **Compression** | Automatic image compression (>500KB) |
-| **Preview**     | Click to preview images/PDFs         |
-| **Delete**      | Remove files from session            |
-
-### Task Management
-
-| Feature            | Description                  |
-| ------------------ | ---------------------------- |
-| **Create Tasks**   | Add tasks with text          |
-| **Complete Tasks** | Toggle completion status     |
-| **Delete Tasks**   | Remove completed tasks       |
-| **Real-time Sync** | Updates appear for all users |
-
-### UI/UX Features
-
-| Feature               | Description                      |
-| --------------------- | -------------------------------- |
-| **Dark/Light Theme**  | Toggle between themes            |
-| **Responsive Design** | Works on desktop, tablet, mobile |
-| **Mobile Bottom Nav** | Easy access on phones            |
-| **Search Sections**   | Filter sections by name          |
-| **Drag & Drop**       | Reorder sections by dragging     |
-
----
-
-## 📱 Responsive Design
-
-| Device      | Breakpoint       | Sidebar               | Bottom Nav |
-| ----------- | ---------------- | --------------------- | ---------- |
-| **Desktop** | `> 1024px`       | Always visible        | Hidden     |
-| **Tablet**  | `768px - 1024px` | Collapsible (overlay) | Hidden     |
-| **Mobile**  | `< 768px`        | Collapsible (overlay) | Visible    |
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository.
-2. Create your feature branch:
+### 3. Deploy
 
 ```bash
-git checkout -b feature/AmazingFeature
+npm i -g vercel
+cd syncspace
+vercel
 ```
 
-3. Commit your changes:
+Or connect the GitHub repo in the Vercel dashboard and set the env vars.
 
-```bash
-git commit -m "Add some AmazingFeature"
-```
+### 4. Local override (optional)
 
-4. Push to the branch:
+Before loading `app.js`, you can inject:
 
-```bash
-git push origin feature/AmazingFeature
-```
-
-5. Open a Pull Request.
-
-### Development Guidelines
-
-- Follow existing code style
-- Write clear, commented code
-- Update documentation as needed
-- Test your changes before submitting
-
----
-
-## 📄 License
-
-This project is distributed under the **MIT License**.
-
-```text
-MIT License
-
-Copyright (c) 2024 SyncSpace
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+```html
+<script>
+  window.SYNCSPACE_CONFIG = {
+    url: "https://YOUR_PROJECT.supabase.co",
+    key: "YOUR_ANON_KEY",
+  };
+</script>
 ```
 
 ---
 
-## 🙏 Acknowledgments
+## Auth model
 
-- Supabase - Backend & Realtime
-- Vercel - Hosting
-- Font Awesome - Icons
-- Google Fonts - Typography
+- **No OAuth / no JWT**
+- Login checks `users.user_id`
+  - Exists → verify SHA-256 password hash
+  - Missing → show signup with prefilled User ID
+- Session rooms also use hashed passwords
+- App session is stored in `localStorage` (`ss_auth`) for convenience
+
+> For production, replace open RLS policies in `schema.sql` with tighter rules and never store plain passwords (this app already hashes with SHA-256; consider bcrypt/argon2 on a server for stronger threat models).
 
 ---
 
-## 📞 Contact
+## File download
 
-**Built with ❤️ by [Your Name]**
+Each file card has a **Download** button that:
 
-- GitHub: [yourusername](https://github.com/yourusername)
-- Email: [youremail@example.com](mailto:youremail@example.com)
+1. Reads base64 `file_data`
+2. Converts to a `Blob`
+3. Triggers a browser download with the original filename
 
-[⬆ Back to Top](#-syncspace)
+Supported uploads: JPEG, PNG, GIF, WEBP, PDF, TXT, DOC/DOCX, XLS/XLSX (max **2MB**). Images are lightly compressed in the browser when large.
+
+---
+
+## Design system
+
+- **Glass:** `backdrop-filter: blur(20px)` + translucent surfaces
+- **Colors:** purple `#6c5ce7`, cyan `#00cec9`, pink `#fd79a8` on deep dark `#0a0a0f`
+- **Font:** Inter
+- **Icons:** Font Awesome 6
+- **Breakpoints:** desktop / tablet / mobile bottom nav
+
+---
+
+## Scripts & runtime notes
+
+- Realtime target: ~100ms UI updates when Supabase Realtime is connected
+- Editor auto-save debounce: **800ms**
+- Session timer: **30 minutes** (soft end — you can stay)
+- Whiteboard strokes broadcast over Supabase Realtime (demo mode: local only)
+- Service worker caches static assets only (not Supabase / API)
+
+---
+
+## Troubleshooting
+
+| Issue                                 | Fix                                                                   |
+| ------------------------------------- | --------------------------------------------------------------------- |
+| Always in demo mode                   | Set Vercel env vars or `window.SYNCSPACE_CONFIG`                      |
+| Realtime not syncing                  | Run `ALTER PUBLICATION ...` from `schema.sql`; check RLS              |
+| Files fail to upload                  | Size > 2MB or unsupported MIME                                        |
+| Whiteboard blurry                     | DPR resize runs on panel open; resize window once                     |
+| Auth “user exists” but wrong password | Password is case-sensitive; reset by clearing user row / localStorage |
+
+**Clear demo data:** DevTools → Application → Local Storage → remove `ss_users`, `ss_sessions`, `ss_auth`.
+
+---
+
+## License
+
+MIT — free to use and modify for personal or commercial projects.
+
+---
+
+Built with glassmorphism, liquid motion, and a focus on shipping a complete collaborative workspace in pure front-end + Supabase.

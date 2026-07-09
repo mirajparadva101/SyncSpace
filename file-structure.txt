@@ -1,10 +1,12 @@
 syncspace/
-├── index.html                  # All HTML (Responsive UI)
-├── style.css                   # All CSS (Dark/Light theme, Mobile-first)
-├── app.js                      # Complete JavaScript (Auth + All Features)
-├── manifest.json               # PWA Support
-├── sw.js                       # Service Worker (Offline support)
-├── schema.sql                  # Supabase Database Schema
-├── vercel.json                 # Vercel Deployment Config
-├── README.md                   # Project Documentation
-└── file-structure.txt          # Plain text project structure
+├── index.html                  # Landing page + Auth + Dashboard (all views)
+├── style.css                   # Glassmorphism design system + animations
+├── app.js                      # App logic, auth, realtime, features
+├── manifest.json               # PWA manifest
+├── sw.js                       # Service Worker (offline cache)
+├── schema.sql                  # Supabase PostgreSQL schema
+├── vercel.json                 # Vercel routing & headers
+├── api/
+│   └── config.js               # Secure Supabase env config endpoint
+├── README.md                   # Setup & documentation
+└── file-structure.txt          # This file

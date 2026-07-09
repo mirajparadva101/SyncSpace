@@ -1,606 +1,788 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="theme-color" content="#6c5ce7" />
     <meta
       name="description"
-      content="SyncSpace — Real-time collaborative workspace"
+      content="SyncSpace — Real-Time Collaborative Workspace with Glassmorphism UI"
     />
+    <title>SyncSpace — Real-Time Collaborative Workspace</title>
     <link rel="manifest" href="manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link
       rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
     />
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-    <title>SyncSpace</title>
     <link rel="stylesheet" href="style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%236c5ce7'/%3E%3Cstop offset='1' stop-color='%2300cec9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' rx='22' fill='%230a0a0f'/%3E%3Cpath fill='url(%23g)' d='M50 18c-6 12-22 22-22 38a22 22 0 1044 0c0-16-16-26-22-38z'/%3E%3C/svg%3E"
+    />
   </head>
   <body>
-    <!-- Background Orbs -->
-    <div class="bg-orbs">
-      <div class="bg-orb"></div>
-      <div class="bg-orb"></div>
-      <div class="bg-orb"></div>
+    <!-- Animated background orbs -->
+    <div class="bg-orbs" aria-hidden="true">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+      <div class="orb orb-4"></div>
     </div>
 
-    <!-- Loading Screen -->
-    <div class="loading-screen" id="loadingScreen">
-      <div class="loader-content">
-        <div class="loader-logo">
-          <div class="loader-logo-icon"><i class="fas fa-rocket"></i></div>
-          <div class="loader-text">SyncSpace</div>
+    <!-- ===================== LANDING ===================== -->
+    <div id="view-landing" class="view active">
+      <nav class="nav glass">
+        <div class="nav-brand">
+          <span class="logo-mark"><i class="fa-solid fa-rocket"></i></span>
+          <span class="logo-text">SyncSpace</span>
         </div>
-        <div class="loader-steps" id="loaderSteps">
-          <div class="loader-step" data-step="init">
-            <span class="step-icon"
-              ><i class="fas fa-circle-notch fa-spin"></i
-            ></span>
-            <span class="step-label">Initializing app...</span>
-          </div>
-          <div class="loader-step pending" data-step="creds">
-            <span class="step-icon"
-              ><i class="fas fa-circle" style="font-size: 6px"></i
-            ></span>
-            <span class="step-label">Loading credentials...</span>
-          </div>
-          <div class="loader-step pending" data-step="connect">
-            <span class="step-icon"
-              ><i class="fas fa-circle" style="font-size: 6px"></i
-            ></span>
-            <span class="step-label">Connecting to Supabase...</span>
-          </div>
-          <div class="loader-step pending" data-step="verify">
-            <span class="step-icon"
-              ><i class="fas fa-circle" style="font-size: 6px"></i
-            ></span>
-            <span class="step-label">Verifying connection...</span>
-          </div>
-          <div class="loader-step pending" data-step="restore">
-            <span class="step-icon"
-              ><i class="fas fa-circle" style="font-size: 6px"></i
-            ></span>
-            <span class="step-label">Restoring session...</span>
-          </div>
-          <div class="loader-step pending" data-step="ready">
-            <span class="step-icon"
-              ><i class="fas fa-circle" style="font-size: 6px"></i
-            ></span>
-            <span class="step-label">Ready</span>
-          </div>
-        </div>
-        <div class="loader-error hidden" id="loaderError">
-          <i class="fas fa-exclamation-triangle"></i>
-          <span id="loaderErrorMsg"></span>
-          <button
-            class="btn btn-ghost btn-sm"
-            id="loaderRetry"
-            style="margin-top: 8px"
-          >
-            <i class="fas fa-redo"></i> Retry
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <button class="btn btn-primary btn-sm" data-action="goto-auth">
+            Get Started
           </button>
         </div>
-      </div>
-    </div>
+        <button class="nav-toggle" id="nav-toggle" aria-label="Menu">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+      </nav>
 
-    <!-- Auth Screen -->
-    <div class="screen" id="authScreen">
-      <div class="auth-card">
-        <!-- LOGIN FORM -->
-        <div id="loginForm">
-          <div class="auth-header">
-            <i class="fas fa-rocket"></i>
-            <h1>SyncSpace</h1>
-            <p>Real-time collaborative workspace</p>
+      <header class="hero">
+        <div class="hero-card glass">
+          <div class="rocket-float" aria-hidden="true">
+            <i class="fa-solid fa-rocket"></i>
           </div>
-          <form id="loginFormEl" autocomplete="off">
-            <div class="form-group">
-              <label for="loginUserId">User ID</label>
-              <input
-                type="text"
-                id="loginUserId"
-                placeholder="Enter your User ID"
-                required
-                minlength="2"
-                maxlength="30"
-              />
-            </div>
-            <div class="form-group">
-              <label for="loginPassword">Password</label>
-              <input
-                type="password"
-                id="loginPassword"
-                placeholder="Enter your password"
-                required
-                minlength="6"
-              />
-            </div>
-            <button
-              type="submit"
-              class="btn btn-primary btn-full"
-              id="loginBtn"
-            >
-              <span>Login</span> <i class="fas fa-arrow-right"></i>
+          <h1 class="gradient-text">SyncSpace</h1>
+          <p class="hero-sub">Real-Time Collaborative Workspace</p>
+          <p class="hero-desc">
+            Edit docs, chat, manage tasks, share files and sketch ideas together
+            — all in one beautiful glass workspace.
+          </p>
+          <div class="hero-cta">
+            <button class="btn btn-primary btn-lg" data-action="goto-auth">
+              <i class="fa-solid fa-bolt"></i> Get Started
             </button>
-          </form>
-          <div id="loginError" class="form-error hidden"></div>
-
-          <!-- Create Account Button -->
-          <button
-            class="btn btn-ghost btn-full"
-            id="showSignupBtn"
-            style="margin-top: 12px"
-          >
-            <i class="fas fa-user-plus"></i> Create Account
-          </button>
-        </div>
-
-        <!-- SIGNUP FORM (hidden by default) -->
-        <div id="signupForm" class="hidden">
-          <div class="auth-header">
-            <i class="fas fa-user-plus"></i>
-            <h1>Create Account</h1>
-            <p>No account found. Register below to continue.</p>
+            <a href="#features" class="btn btn-ghost btn-lg">
+              <i class="fa-solid fa-circle-info"></i> Learn More
+            </a>
           </div>
-          <form id="signupFormEl" autocomplete="off">
-            <div class="form-group">
-              <label for="signupName">Full Name</label>
-              <input
-                type="text"
-                id="signupName"
-                placeholder="Your display name"
-                required
-                minlength="2"
-                maxlength="50"
-              />
-            </div>
-            <div class="form-group">
-              <label for="signupUserId">User ID</label>
-              <input
-                type="text"
-                id="signupUserId"
-                placeholder="Choose a unique ID"
-                required
-                minlength="2"
-                maxlength="30"
-                readonly
-              />
-            </div>
-            <div class="form-group">
-              <label for="signupPassword">Password</label>
-              <input
-                type="password"
-                id="signupPassword"
-                placeholder="Minimum 6 characters"
-                required
-                minlength="6"
-              />
-            </div>
-            <div class="form-group">
-              <label for="signupConfirm">Confirm Password</label>
-              <input
-                type="password"
-                id="signupConfirm"
-                placeholder="Re-enter password"
-                required
-                minlength="6"
-              />
-            </div>
-            <button
-              type="submit"
-              class="btn btn-primary btn-full"
-              id="signupBtn"
-            >
-              <span>Create Account</span> <i class="fas fa-check"></i>
-            </button>
-          </form>
-          <button
-            class="btn btn-ghost btn-full"
-            id="backToLogin"
-            style="margin-top: 10px"
-          >
-            <i class="fas fa-arrow-left"></i> Back to Login
-          </button>
-          <div id="signupError" class="form-error hidden"></div>
         </div>
-      </div>
-    </div>
+      </header>
 
-    <!-- Config Screen (shown when no Supabase credentials) -->
-    <div class="screen" id="configScreen">
-      <div class="auth-card">
-        <div class="auth-header">
-          <i class="fas fa-cog"></i>
-          <h1>Setup Required</h1>
-          <p>Enter your Supabase project credentials</p>
+      <section class="stats-section" id="stats">
+        <div class="stats-grid">
+          <div class="stat-card glass">
+            <div class="stat-icon"><i class="fa-solid fa-users"></i></div>
+            <div class="stat-value" data-stat="users">0</div>
+            <div class="stat-label">Total Users</div>
+          </div>
+          <div class="stat-card glass">
+            <div class="stat-icon"><i class="fa-solid fa-layer-group"></i></div>
+            <div class="stat-value" data-stat="sessions">0</div>
+            <div class="stat-label">Active Sessions</div>
+          </div>
+          <div class="stat-card glass">
+            <div class="stat-icon"><i class="fa-solid fa-comments"></i></div>
+            <div class="stat-value" data-stat="messages">0</div>
+            <div class="stat-label">Messages Sent</div>
+          </div>
+          <div class="stat-card glass">
+            <div class="stat-icon">
+              <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <div class="stat-value" data-stat="tasks">0</div>
+            <div class="stat-label">Tasks Completed</div>
+          </div>
         </div>
-        <form id="configForm" autocomplete="off">
-          <div class="form-group">
-            <label>Supabase URL</label>
-            <input
-              type="url"
-              id="cfgUrl"
-              placeholder="https://your-project.supabase.co"
-              required
-            />
+      </section>
+
+      <section class="features-section" id="features">
+        <h2 class="section-title">Everything your team needs</h2>
+        <p class="section-sub">Six powerful tools, one glass workspace</p>
+        <div class="features-grid">
+          <article class="feature-card glass">
+            <div class="feature-icon">
+              <i class="fa-solid fa-file-lines"></i>
+            </div>
+            <h3>Real-time Editor</h3>
+            <p>
+              Rich text with auto-save, version history and live section sync.
+            </p>
+          </article>
+          <article class="feature-card glass">
+            <div class="feature-icon">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+            <h3>File Sharing</h3>
+            <p>
+              Drag & drop images, PDFs and docs. Preview and download anytime.
+            </p>
+          </article>
+          <article class="feature-card glass">
+            <div class="feature-icon"><i class="fa-solid fa-comments"></i></div>
+            <h3>Team Chat</h3>
+            <p>
+              Instant messaging with avatars, timestamps and typing indicators.
+            </p>
+          </article>
+          <article class="feature-card glass">
+            <div class="feature-icon">
+              <i class="fa-solid fa-list-check"></i>
+            </div>
+            <h3>Task Management</h3>
+            <p>Track todos with progress bars and live completion sync.</p>
+          </article>
+          <article class="feature-card glass">
+            <div class="feature-icon">
+              <i class="fa-solid fa-paintbrush"></i>
+            </div>
+            <h3>Whiteboard</h3>
+            <p>
+              Sketch ideas together with pen, colors, eraser and touch support.
+            </p>
+          </article>
+          <article class="feature-card glass">
+            <div class="feature-icon">
+              <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h3>Secure & Private</h3>
+            <p>
+              Password-protected sessions and hashed credentials throughout.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="how-section" id="how">
+        <h2 class="section-title">How it works</h2>
+        <div class="how-steps">
+          <div class="how-step glass">
+            <div class="how-num">1</div>
+            <h3>Create Account</h3>
+            <p>
+              Pick a User ID and password. If you're new, we open signup
+              automatically.
+            </p>
           </div>
-          <div class="form-group">
-            <label>Supabase Anon Key</label>
-            <input
-              type="text"
-              id="cfgKey"
-              placeholder="eyJhbGciOiJIUzI1NiIs..."
-              required
-            />
+          <div class="how-line" aria-hidden="true"></div>
+          <div class="how-step glass">
+            <div class="how-num">2</div>
+            <h3>Create or Join</h3>
+            <p>
+              Start a session with a 6-char ID or join an existing room with
+              password.
+            </p>
           </div>
-          <button type="submit" class="btn btn-primary btn-full">
-            <i class="fas fa-plug"></i> Connect & Continue
-          </button>
-        </form>
-        <p class="config-hint">
-          Get these from Supabase Dashboard &rarr; Settings &rarr; API.<br />They
-          will be saved in your browser only.
+          <div class="how-line" aria-hidden="true"></div>
+          <div class="how-step glass">
+            <div class="how-num">3</div>
+            <h3>Collaborate Live</h3>
+            <p>
+              Edit, chat, sketch and share files in real-time with your team.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer glass">
+        <div class="footer-inner">
+          <div class="footer-brand">
+            <span class="logo-mark"><i class="fa-solid fa-rocket"></i></span>
+            <span>SyncSpace</span>
+          </div>
+          <div class="footer-links">
+            <a href="#features">Features</a>
+            <a href="#how">How it works</a>
+            <a href="#" data-action="goto-auth">Login</a>
+          </div>
+          <div class="footer-social">
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener"
+              aria-label="GitHub"
+              ><i class="fa-brands fa-github"></i
+            ></a>
+            <a
+              href="https://twitter.com"
+              target="_blank"
+              rel="noopener"
+              aria-label="Twitter"
+              ><i class="fa-brands fa-x-twitter"></i
+            ></a>
+          </div>
+        </div>
+        <p class="footer-copy">
+          &copy; 2026 SyncSpace. Built for real-time teams.
         </p>
-      </div>
+      </footer>
     </div>
 
-    <!-- Session Screen -->
-    <div class="screen" id="sessionScreen">
-      <div class="session-header">
-        <h1>Welcome, <span id="sessionUserName"></span></h1>
-        <p>Create a new session or join an existing one</p>
-      </div>
-      <div class="session-cards">
-        <div class="session-card">
-          <h2><i class="fas fa-plus-circle"></i> Create Session</h2>
-          <form id="createForm" autocomplete="off">
-            <div class="form-group">
-              <label for="createName">Session Name</label>
+    <!-- ===================== AUTH ===================== -->
+    <div id="view-auth" class="view">
+      <div class="auth-wrap">
+        <button
+          class="btn btn-ghost btn-sm auth-back"
+          data-action="goto-landing"
+        >
+          <i class="fa-solid fa-arrow-left"></i> Back
+        </button>
+
+        <!-- Login -->
+        <div id="auth-login" class="auth-card glass">
+          <div class="auth-logo"><i class="fa-solid fa-rocket"></i></div>
+          <h2>Welcome back</h2>
+          <p class="auth-sub">Sign in with your User ID</p>
+          <form id="form-login" autocomplete="on">
+            <label class="field">
+              <span class="field-icon"><i class="fa-solid fa-user"></i></span>
               <input
                 type="text"
-                id="createName"
-                placeholder="My Workspace"
+                id="login-userid"
+                name="userid"
+                placeholder="User ID"
                 required
+                minlength="3"
+                maxlength="32"
               />
-            </div>
-            <div class="form-group">
-              <label for="createPassword">Password</label>
+            </label>
+            <label class="field">
+              <span class="field-icon"><i class="fa-solid fa-lock"></i></span>
               <input
                 type="password"
-                id="createPassword"
-                placeholder="Min 4 characters"
+                id="login-password"
+                name="password"
+                placeholder="Password"
                 required
                 minlength="4"
               />
-            </div>
-            <button type="submit" class="btn btn-primary btn-full">
-              <i class="fas fa-plus"></i> Create
+            </label>
+            <p class="form-error" id="login-error" hidden></p>
+            <button
+              type="submit"
+              class="btn btn-primary btn-block"
+              id="login-btn"
+            >
+              <span class="btn-label">Login</span>
+              <span class="btn-spinner" hidden
+                ><i class="fa-solid fa-spinner fa-spin"></i
+              ></span>
             </button>
           </form>
+          <p class="auth-switch">
+            New here?
+            <button type="button" class="link-btn" data-action="show-signup">
+              Create Account
+            </button>
+          </p>
         </div>
-        <div class="session-card">
-          <h2><i class="fas fa-sign-in-alt"></i> Join Session</h2>
-          <form id="joinForm" autocomplete="off">
-            <div class="form-group">
-              <label for="joinId">Session ID</label>
+
+        <!-- Signup -->
+        <div id="auth-signup" class="auth-card glass" hidden>
+          <div class="auth-logo"><i class="fa-solid fa-user-plus"></i></div>
+          <h2>Create account</h2>
+          <p class="auth-sub">Join SyncSpace in seconds</p>
+          <form id="form-signup" autocomplete="on">
+            <label class="field">
+              <span class="field-icon"
+                ><i class="fa-solid fa-id-card"></i
+              ></span>
               <input
                 type="text"
-                id="joinId"
-                placeholder="6-character code"
+                id="signup-name"
+                name="name"
+                placeholder="Full Name"
                 required
-                maxlength="6"
-                style="text-transform: uppercase"
+                minlength="2"
+                maxlength="64"
               />
-            </div>
-            <div class="form-group">
-              <label for="joinPassword">Password</label>
+            </label>
+            <label class="field">
+              <span class="field-icon"><i class="fa-solid fa-user"></i></span>
+              <input
+                type="text"
+                id="signup-userid"
+                name="userid"
+                placeholder="User ID"
+                required
+                minlength="3"
+                maxlength="32"
+              />
+            </label>
+            <label class="field">
+              <span class="field-icon"><i class="fa-solid fa-lock"></i></span>
               <input
                 type="password"
-                id="joinPassword"
-                placeholder="Session password"
+                id="signup-password"
+                name="password"
+                placeholder="Password"
                 required
+                minlength="4"
               />
+            </label>
+            <div class="strength" id="pw-strength" aria-hidden="true">
+              <div class="strength-bar"><span></span></div>
+              <span class="strength-label">Weak</span>
             </div>
-            <button type="submit" class="btn btn-secondary btn-full">
-              <i class="fas fa-arrow-right"></i> Join
+            <label class="field">
+              <span class="field-icon"><i class="fa-solid fa-lock"></i></span>
+              <input
+                type="password"
+                id="signup-confirm"
+                name="confirm"
+                placeholder="Confirm Password"
+                required
+                minlength="4"
+              />
+            </label>
+            <p class="form-error" id="signup-error" hidden></p>
+            <button
+              type="submit"
+              class="btn btn-primary btn-block"
+              id="signup-btn"
+            >
+              <span class="btn-label">Create Account</span>
+              <span class="btn-spinner" hidden
+                ><i class="fa-solid fa-spinner fa-spin"></i
+              ></span>
             </button>
           </form>
+          <p class="auth-switch">
+            Already have an account?
+            <button type="button" class="link-btn" data-action="show-login">
+              Back to Login
+            </button>
+          </p>
         </div>
       </div>
-      <button class="btn btn-ghost" id="logoutBtn">
-        <i class="fas fa-sign-out-alt"></i> Logout
-      </button>
     </div>
 
-    <!-- Dashboard -->
-    <div id="dashboard">
-      <div class="sidebar-overlay" id="sidebarOverlay"></div>
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-          <div class="logo">
-            <i class="fas fa-rocket"></i><span>SyncSpace</span>
-          </div>
-          <button
-            class="btn-icon mobile-only"
-            id="closeSidebar"
-            aria-label="Close sidebar"
-          >
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        <div class="sidebar-search">
-          <i class="fas fa-search"></i>
-          <input
-            type="text"
-            id="sectionSearch"
-            placeholder="Search sections..."
-          />
-        </div>
-        <div class="sidebar-sections" id="sectionsList"></div>
-        <button class="btn btn-ghost btn-full sidebar-add" id="addSectionBtn">
-          <i class="fas fa-plus"></i> New Section
-        </button>
-        <div class="sidebar-footer">
-          <div class="user-info">
-            <div class="user-avatar" id="sidebarAvatar"></div>
-            <div class="user-details">
-              <span class="user-name" id="sidebarUserName"></span>
-              <span class="session-id" id="sidebarSessionId"></span>
+    <!-- ===================== SESSION HUB ===================== -->
+    <div id="view-hub" class="view">
+      <div class="hub-wrap">
+        <header class="hub-header glass">
+          <div class="hub-user">
+            <div class="avatar" id="hub-avatar">U</div>
+            <div>
+              <div class="hub-name" id="hub-name">User</div>
+              <div class="hub-id" id="hub-userid">@user</div>
             </div>
           </div>
-          <button class="btn-icon" id="leaveSessionBtn" title="Leave session">
-            <i class="fas fa-sign-out-alt"></i>
+          <button
+            class="btn btn-ghost btn-sm"
+            data-action="logout"
+            title="Logout"
+          >
+            <i class="fa-solid fa-right-from-bracket"></i> Logout
+          </button>
+        </header>
+
+        <div class="hub-grid">
+          <div class="hub-card glass">
+            <div class="hub-card-icon"><i class="fa-solid fa-plus"></i></div>
+            <h3>Create Session</h3>
+            <p>Start a new collaborative room</p>
+            <form id="form-create-session">
+              <label class="field">
+                <span class="field-icon"><i class="fa-solid fa-tag"></i></span>
+                <input
+                  type="text"
+                  id="create-name"
+                  placeholder="Session name"
+                  required
+                  maxlength="64"
+                />
+              </label>
+              <label class="field">
+                <span class="field-icon"><i class="fa-solid fa-key"></i></span>
+                <input
+                  type="password"
+                  id="create-password"
+                  placeholder="Session password"
+                  required
+                  minlength="3"
+                />
+              </label>
+              <button type="submit" class="btn btn-primary btn-block">
+                <i class="fa-solid fa-rocket"></i> Create Session
+              </button>
+            </form>
+          </div>
+
+          <div class="hub-card glass">
+            <div class="hub-card-icon join">
+              <i class="fa-solid fa-right-to-bracket"></i>
+            </div>
+            <h3>Join Session</h3>
+            <p>Enter a 6-character session ID</p>
+            <form id="form-join-session">
+              <label class="field">
+                <span class="field-icon"
+                  ><i class="fa-solid fa-hashtag"></i
+                ></span>
+                <input
+                  type="text"
+                  id="join-id"
+                  placeholder="SESSION"
+                  required
+                  minlength="6"
+                  maxlength="6"
+                  class="mono uppercase"
+                />
+              </label>
+              <label class="field">
+                <span class="field-icon"><i class="fa-solid fa-key"></i></span>
+                <input
+                  type="password"
+                  id="join-password"
+                  placeholder="Session password"
+                  required
+                />
+              </label>
+              <button type="submit" class="btn btn-secondary btn-block">
+                <i class="fa-solid fa-door-open"></i> Join Session
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== DASHBOARD ===================== -->
+    <div id="view-dashboard" class="view">
+      <aside class="sidebar glass" id="sidebar">
+        <div class="sidebar-top">
+          <div class="session-id-row">
+            <span class="session-id mono" id="session-id-label">------</span>
+            <button
+              class="icon-btn"
+              id="copy-session-id"
+              title="Copy Session ID"
+            >
+              <i class="fa-regular fa-copy"></i>
+            </button>
+          </div>
+          <div class="session-name" id="session-name-label">Session</div>
+        </div>
+
+        <div class="sidebar-sections">
+          <div class="sidebar-label">
+            <span>Sections</span>
+            <button class="icon-btn" id="add-section-btn" title="Add section">
+              <i class="fa-solid fa-plus"></i>
+            </button>
+          </div>
+          <ul class="section-list" id="section-list"></ul>
+        </div>
+
+        <nav class="sidebar-nav" id="sidebar-nav">
+          <button class="nav-item active" data-panel="editor">
+            <i class="fa-solid fa-file-lines"></i> <span>Editor</span>
+          </button>
+          <button class="nav-item" data-panel="chat">
+            <i class="fa-solid fa-comments"></i> <span>Chat</span
+            ><span class="badge" id="chat-badge" hidden>0</span>
+          </button>
+          <button class="nav-item" data-panel="tasks">
+            <i class="fa-solid fa-list-check"></i> <span>Tasks</span>
+          </button>
+          <button class="nav-item" data-panel="whiteboard">
+            <i class="fa-solid fa-paintbrush"></i> <span>Board</span>
+          </button>
+          <button class="nav-item" data-panel="files">
+            <i class="fa-solid fa-folder-open"></i> <span>Files</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <button
+            class="btn btn-ghost btn-sm btn-block"
+            id="delete-session-btn"
+          >
+            <i class="fa-solid fa-trash"></i> Delete Session
+          </button>
+          <button
+            class="btn btn-ghost btn-sm btn-block"
+            data-action="leave-session"
+          >
+            <i class="fa-solid fa-arrow-right-from-bracket"></i> Leave
           </button>
         </div>
       </aside>
 
-      <main class="main-content">
-        <header class="topbar">
-          <div class="topbar-left">
-            <button
-              class="btn-icon mobile-only"
-              id="menuBtn"
-              aria-label="Open menu"
-            >
-              <i class="fas fa-bars"></i>
-            </button>
-            <h2 id="activeSectionName">Select a section</h2>
-            <div class="connection-status" id="connectionStatus">
-              <span class="status-dot" id="statusDot"></span>
-              <span class="status-text" id="statusText">Connecting</span>
-            </div>
+      <div class="dash-main">
+        <header class="dash-header glass">
+          <button
+            class="icon-btn mobile-only"
+            id="sidebar-toggle"
+            aria-label="Toggle sidebar"
+          >
+            <i class="fa-solid fa-bars"></i>
+          </button>
+          <div class="dash-title">
+            <span id="panel-title">Editor</span>
+            <span class="save-status" id="save-status">Saved</span>
           </div>
-          <div class="topbar-right">
-            <button class="btn-icon" id="themeToggle" title="Toggle theme">
-              <i class="fas fa-moon" id="themeIcon"></i>
-            </button>
+          <div class="dash-meta">
+            <span class="conn-dot" id="conn-dot" title="Connection"></span>
+            <span class="timer mono" id="session-timer">30:00</span>
+            <div class="avatar sm" id="dash-avatar">U</div>
           </div>
         </header>
 
-        <nav class="tab-bar" id="tabBar">
-          <button class="tab-btn active" data-tab="editor">
-            <i class="fas fa-pen-to-square"></i><span>Editor</span>
-          </button>
-          <button class="tab-btn" data-tab="files">
-            <i class="fas fa-folder-open"></i><span>Files</span>
-          </button>
-          <button class="tab-btn" data-tab="chat">
-            <i class="fas fa-comments"></i><span>Chat</span
-            ><span class="tab-badge hidden" id="chatBadge">0</span>
-          </button>
-          <button class="tab-btn" data-tab="tasks">
-            <i class="fas fa-list-check"></i><span>Tasks</span>
-          </button>
-          <button class="tab-btn" data-tab="whiteboard">
-            <i class="fas fa-paintbrush"></i><span>Board</span>
-          </button>
-        </nav>
-
-        <div class="tab-content">
-          <!-- Editor -->
-          <div class="tab-panel active" id="editorPanel">
-            <div class="editor-toolbar" id="editorToolbar">
-              <button data-cmd="bold" title="Bold">
-                <i class="fas fa-bold"></i>
+        <main class="dash-content" id="dash-content">
+          <!-- EDITOR -->
+          <section class="panel active" id="panel-editor">
+            <div class="editor-toolbar glass">
+              <button class="tool-btn" data-cmd="bold" title="Bold">
+                <i class="fa-solid fa-bold"></i>
               </button>
-              <button data-cmd="italic" title="Italic">
-                <i class="fas fa-italic"></i>
+              <button class="tool-btn" data-cmd="italic" title="Italic">
+                <i class="fa-solid fa-italic"></i>
               </button>
-              <button data-cmd="underline" title="Underline">
-                <i class="fas fa-underline"></i>
+              <button class="tool-btn" data-cmd="underline" title="Underline">
+                <i class="fa-solid fa-underline"></i>
               </button>
-              <button data-cmd="strikeThrough" title="Strikethrough">
-                <i class="fas fa-strikethrough"></i>
+              <button class="tool-btn" data-cmd="strikeThrough" title="Strike">
+                <i class="fa-solid fa-strikethrough"></i>
               </button>
-              <div class="toolbar-sep"></div>
+              <span class="tool-sep"></span>
               <button
+                class="tool-btn"
                 data-cmd="formatBlock"
-                data-value="h1"
-                title="Heading 1"
-                style="font-size: 14px"
+                data-val="h1"
+                title="H1"
               >
                 H1
               </button>
               <button
+                class="tool-btn"
                 data-cmd="formatBlock"
-                data-value="h2"
-                title="Heading 2"
-                style="font-size: 12px"
+                data-val="h2"
+                title="H2"
               >
                 H2
               </button>
               <button
+                class="tool-btn"
                 data-cmd="formatBlock"
-                data-value="h3"
-                title="Heading 3"
-                style="font-size: 11px"
+                data-val="h3"
+                title="H3"
               >
                 H3
               </button>
-              <div class="toolbar-sep"></div>
-              <button data-cmd="insertUnorderedList" title="Bullet list">
-                <i class="fas fa-list-ul"></i>
-              </button>
-              <button data-cmd="insertOrderedList" title="Numbered list">
-                <i class="fas fa-list-ol"></i>
+              <span class="tool-sep"></span>
+              <button
+                class="tool-btn"
+                data-cmd="insertUnorderedList"
+                title="Bullets"
+              >
+                <i class="fa-solid fa-list-ul"></i>
               </button>
               <button
+                class="tool-btn"
+                data-cmd="insertOrderedList"
+                title="Numbers"
+              >
+                <i class="fa-solid fa-list-ol"></i>
+              </button>
+              <button
+                class="tool-btn"
                 data-cmd="formatBlock"
-                data-value="blockquote"
+                data-val="blockquote"
                 title="Quote"
               >
-                <i class="fas fa-quote-right"></i>
+                <i class="fa-solid fa-quote-left"></i>
+              </button>
+              <span class="tool-sep"></span>
+              <button class="tool-btn" id="history-btn" title="Version history">
+                <i class="fa-solid fa-clock-rotate-left"></i>
               </button>
             </div>
-            <div
-              class="editor-content"
-              id="editorContent"
-              contenteditable="true"
-              data-placeholder="Select a section and start writing..."
-            ></div>
-            <div class="editor-status">
-              <span id="editorSaveStatus">Ready</span>
+            <div class="editor-meta">
               <span
-                id="editorTypingIndicator"
-                class="hidden"
-                style="color: var(--secondary); font-style: italic"
-                >Someone is typing...</span
-              >
+                id="typing-indicator"
+                class="typing-indicator"
+                hidden
+              ></span>
+              <span id="editor-section-name">Untitled</span>
             </div>
-          </div>
+            <div
+              class="editor-surface glass"
+              id="editor"
+              contenteditable="true"
+              spellcheck="true"
+              data-placeholder="Start writing…"
+            ></div>
+          </section>
 
-          <!-- Files -->
-          <div class="tab-panel" id="filesPanel">
-            <div class="file-dropzone" id="fileDropzone">
-              <i class="fas fa-cloud-upload-alt"></i>
-              <p>Drop files here or click to upload</p>
-              <span>Images (JPEG, PNG, GIF, WEBP), PDF, TXT — Max 2MB</span>
+          <!-- CHAT -->
+          <section class="panel" id="panel-chat">
+            <div class="chat-wrap glass">
+              <div class="chat-messages" id="chat-messages">
+                <div class="empty-state" id="chat-empty">
+                  <i class="fa-regular fa-comments"></i>
+                  <p>No messages yet. Say hello!</p>
+                </div>
+              </div>
+              <div class="chat-typing" id="chat-typing" hidden></div>
+              <form class="chat-input-row" id="form-chat">
+                <input
+                  type="text"
+                  id="chat-input"
+                  placeholder="Type a message…"
+                  maxlength="1000"
+                  autocomplete="off"
+                />
+                <button
+                  type="submit"
+                  class="btn btn-primary icon-only"
+                  aria-label="Send"
+                >
+                  <i class="fa-solid fa-paper-plane"></i>
+                </button>
+              </form>
+            </div>
+          </section>
+
+          <!-- TASKS -->
+          <section class="panel" id="panel-tasks">
+            <div class="tasks-stats">
+              <div class="tstat glass">
+                <span id="task-total">0</span><small>Total</small>
+              </div>
+              <div class="tstat glass">
+                <span id="task-done">0</span><small>Done</small>
+              </div>
+              <div class="tstat glass">
+                <span id="task-pending">0</span><small>Pending</small>
+              </div>
+            </div>
+            <div class="progress glass">
+              <div class="progress-bar" id="task-progress"></div>
+            </div>
+            <form class="task-add glass" id="form-task">
+              <input
+                type="text"
+                id="task-input"
+                placeholder="Add a new task…"
+                maxlength="200"
+                required
+              />
+              <button type="submit" class="btn btn-primary">
+                <i class="fa-solid fa-plus"></i> Add
+              </button>
+            </form>
+            <ul class="task-list" id="task-list"></ul>
+            <div class="empty-state" id="task-empty" hidden>
+              <i class="fa-solid fa-list-check"></i>
+              <p>No tasks yet. Add your first one!</p>
+            </div>
+          </section>
+
+          <!-- WHITEBOARD -->
+          <section class="panel" id="panel-whiteboard">
+            <div class="wb-toolbar glass">
+              <button class="tool-btn active" data-wb="pen" title="Pen">
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              <button class="tool-btn" data-wb="eraser" title="Eraser">
+                <i class="fa-solid fa-eraser"></i>
+              </button>
+              <input type="color" id="wb-color" value="#6c5ce7" title="Color" />
+              <label class="wb-size">
+                Size
+                <input type="range" id="wb-size" min="1" max="40" value="4" />
+              </label>
+              <button class="tool-btn" id="wb-clear" title="Clear">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+            <div class="wb-stage glass">
+              <canvas id="whiteboard"></canvas>
+            </div>
+          </section>
+
+          <!-- FILES -->
+          <section class="panel" id="panel-files">
+            <div class="dropzone glass" id="dropzone">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+              <p>Drag & drop files here, or click to browse</p>
+              <small>JPEG, PNG, GIF, WEBP, PDF, TXT, DOC, XLS — max 2MB</small>
               <input
                 type="file"
-                id="fileInput"
+                id="file-input"
                 multiple
-                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain"
+                accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.txt,.doc,.docx,.xls,.xlsx,image/*"
                 hidden
               />
             </div>
-            <div class="files-grid" id="filesGrid"></div>
-          </div>
+            <div class="files-grid" id="files-grid"></div>
+            <div class="empty-state" id="files-empty">
+              <i class="fa-regular fa-folder-open"></i>
+              <p>No files shared yet</p>
+            </div>
+          </section>
+        </main>
+      </div>
 
-          <!-- Chat -->
-          <div class="tab-panel" id="chatPanel">
-            <div class="chat-messages" id="chatMessages">
-              <div class="chat-empty" id="chatEmpty">
-                <i class="fas fa-comments"></i>
-                <p>No messages yet. Say hello!</p>
-              </div>
-            </div>
-            <div class="chat-typing" id="chatTyping"></div>
-            <div class="chat-input-area">
-              <input
-                type="text"
-                id="chatInput"
-                placeholder="Type a message..."
-                maxlength="500"
-                autocomplete="off"
-              />
-              <button class="btn btn-primary" id="chatSendBtn">
-                <i class="fas fa-paper-plane"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- Tasks -->
-          <div class="tab-panel" id="tasksPanel">
-            <div class="tasks-stats" id="tasksStats"></div>
-            <div class="tasks-progress">
-              <div
-                class="tasks-progress-bar"
-                id="tasksProgressBar"
-                style="width: 0%"
-              ></div>
-            </div>
-            <div class="tasks-input">
-              <input
-                type="text"
-                id="taskInput"
-                placeholder="Add a new task..."
-                maxlength="200"
-                autocomplete="off"
-              />
-              <button class="btn btn-primary" id="addTaskBtn">
-                <i class="fas fa-plus"></i>
-              </button>
-            </div>
-            <div id="tasksList"></div>
-          </div>
-
-          <!-- Whiteboard -->
-          <div class="tab-panel" id="whiteboardPanel">
-            <div class="whiteboard-toolbar">
-              <button class="wb-tool active" data-tool="pen" title="Pen">
-                <i class="fas fa-pen"></i>
-              </button>
-              <button class="wb-tool" data-tool="eraser" title="Eraser">
-                <i class="fas fa-eraser"></i>
-              </button>
-              <div class="toolbar-sep"></div>
-              <input
-                type="color"
-                id="wbColor"
-                value="#6c5ce7"
-                title="Pick color"
-              />
-              <div class="toolbar-sep"></div>
-              <label class="wb-size-label">
-                <i class="fas fa-circle" style="font-size: 6px"></i>
-                <input type="range" id="wbSize" min="1" max="40" value="3" />
-                <i class="fas fa-circle" style="font-size: 14px"></i>
-              </label>
-              <div class="toolbar-sep"></div>
-              <button class="wb-tool" id="wbClear" title="Clear canvas">
-                <i class="fas fa-trash-alt"></i>
-              </button>
-            </div>
-            <div class="whiteboard-container" id="wbContainer">
-              <canvas id="wbCanvas"></canvas>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      <!-- Bottom Nav (Mobile) -->
-      <nav class="bottom-nav" id="bottomNav">
-        <button class="bnav-btn active" data-tab="editor">
-          <i class="fas fa-pen-to-square"></i><span>Editor</span>
+      <!-- Mobile bottom nav -->
+      <nav class="bottom-nav glass mobile-only" id="bottom-nav">
+        <button class="nav-item active" data-panel="editor">
+          <i class="fa-solid fa-file-lines"></i><span>Editor</span>
         </button>
-        <button class="bnav-btn" data-tab="files">
-          <i class="fas fa-folder-open"></i><span>Files</span>
+        <button class="nav-item" data-panel="chat">
+          <i class="fa-solid fa-comments"></i><span>Chat</span>
         </button>
-        <button class="bnav-btn" data-tab="chat">
-          <i class="fas fa-comments"></i><span>Chat</span
-          ><span class="bnav-badge hidden" id="chatBadgeMobile">0</span>
+        <button class="nav-item" data-panel="tasks">
+          <i class="fa-solid fa-list-check"></i><span>Tasks</span>
         </button>
-        <button class="bnav-btn" data-tab="tasks">
-          <i class="fas fa-list-check"></i><span>Tasks</span>
+        <button class="nav-item" data-panel="whiteboard">
+          <i class="fa-solid fa-paintbrush"></i><span>Board</span>
         </button>
-        <button class="bnav-btn" data-tab="whiteboard">
-          <i class="fas fa-paintbrush"></i><span>Board</span>
+        <button class="nav-item" data-panel="files">
+          <i class="fa-solid fa-folder-open"></i><span>Files</span>
         </button>
       </nav>
     </div>
 
-    <!-- Toast Container -->
-    <div class="toast-container" id="toastContainer"></div>
+    <!-- History modal -->
+    <div class="modal" id="history-modal" hidden>
+      <div class="modal-card glass">
+        <div class="modal-head">
+          <h3>Version History</h3>
+          <button class="icon-btn" data-close="history-modal">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <ul class="history-list" id="history-list"></ul>
+      </div>
+    </div>
 
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loading" hidden>
+      <div class="loading-card glass">
+        <div class="spinner"></div>
+        <p id="loading-text">Loading…</p>
+        <div class="load-progress"><span id="load-bar"></span></div>
+      </div>
+    </div>
+
+    <!-- Toasts -->
+    <div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
+    <!-- Supabase client (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
   </body>
 </html>
