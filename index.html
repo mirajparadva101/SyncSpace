@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <meta name="theme-color" content="#0a0a0f" />
+    <meta
+      name="description"
+      content="SyncSpace — Real-time collaborative workspace"
+    />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <title>SyncSpace</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- Background Orbs -->
+    <div class="bg-orbs">
+      <div class="bg-orb"></div>
+      <div class="bg-orb"></div>
+      <div class="bg-orb"></div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+      <div class="loader-content">
+        <div class="loader-logo">
+          <div class="loader-logo-icon"><i class="fas fa-rocket"></i></div>
+          <div class="loader-text">SyncSpace</div>
+        </div>
+        <div class="loader-steps" id="loaderSteps">
+          <div class="loader-step" data-step="init">
+            <span class="step-icon"
+              ><i class="fas fa-circle-notch fa-spin"></i
+            ></span>
+            <span class="step-label">Initializing app...</span>
+          </div>
+          <div class="loader-step pending" data-step="creds">
+            <span class="step-icon"
+              ><i class="fas fa-circle" style="font-size: 6px"></i
+            ></span>
+            <span class="step-label">Loading credentials...</span>
+          </div>
+          <div class="loader-step pending" data-step="connect">
+            <span class="step-icon"
+              ><i class="fas fa-circle" style="font-size: 6px"></i
+            ></span>
+            <span class="step-label">Connecting to Supabase...</span>
+          </div>
+          <div class="loader-step pending" data-step="verify">
+            <span class="step-icon"
+              ><i class="fas fa-circle" style="font-size: 6px"></i
+            ></span>
+            <span class="step-label">Verifying connection...</span>
+          </div>
+          <div class="loader-step pending" data-step="restore">
+            <span class="step-icon"
+              ><i class="fas fa-circle" style="font-size: 6px"></i
+            ></span>
+            <span class="step-label">Restoring session...</span>
+          </div>
+          <div class="loader-step pending" data-step="ready">
+            <span class="step-icon"
+              ><i class="fas fa-circle" style="font-size: 6px"></i
+            ></span>
+            <span class="step-label">Ready</span>
+          </div>
+        </div>
+        <div class="loader-error hidden" id="loaderError">
+          <i class="fas fa-exclamation-triangle"></i>
+          <span id="loaderErrorMsg"></span>
+          <button
+            class="btn btn-ghost btn-sm"
+            id="loaderRetry"
+            style="margin-top: 8px"
+          >
+            <i class="fas fa-redo"></i> Retry
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auth Screen -->
+    <div class="screen" id="authScreen">
+      <div class="auth-card">
+        <!-- LOGIN FORM -->
+        <div id="loginForm">
+          <div class="auth-header">
+            <i class="fas fa-rocket"></i>
+            <h1>SyncSpace</h1>
+            <p>Real-time collaborative workspace</p>
+          </div>
+          <form id="loginFormEl" autocomplete="off">
+            <div class="form-group">
+              <label for="loginUserId">User ID</label>
+              <input
+                type="text"
+                id="loginUserId"
+                placeholder="Enter your User ID"
+                required
+                minlength="2"
+                maxlength="30"
+              />
+            </div>
+            <div class="form-group">
+              <label for="loginPassword">Password</label>
+              <input
+                type="password"
+                id="loginPassword"
+                placeholder="Enter your password"
+                required
+                minlength="6"
+              />
+            </div>
+            <button
+              type="submit"
+              class="btn btn-primary btn-full"
+              id="loginBtn"
+            >
+              <span>Login</span> <i class="fas fa-arrow-right"></i>
+            </button>
+          </form>
+          <div id="loginError" class="form-error hidden"></div>
+
+          <!-- Create Account Button -->
+          <button
+            class="btn btn-ghost btn-full"
+            id="showSignupBtn"
+            style="margin-top: 12px"
+          >
+            <i class="fas fa-user-plus"></i> Create Account
+          </button>
+        </div>
+
+        <!-- SIGNUP FORM (hidden by default) -->
+        <div id="signupForm" class="hidden">
+          <div class="auth-header">
+            <i class="fas fa-user-plus"></i>
+            <h1>Create Account</h1>
+            <p>No account found. Register below to continue.</p>
+          </div>
+          <form id="signupFormEl" autocomplete="off">
+            <div class="form-group">
+              <label for="signupName">Full Name</label>
+              <input
+                type="text"
+                id="signupName"
+                placeholder="Your display name"
+                required
+                minlength="2"
+                maxlength="50"
+              />
+            </div>
+            <div class="form-group">
+              <label for="signupUserId">User ID</label>
+              <input
+                type="text"
+                id="signupUserId"
+                placeholder="Choose a unique ID"
+                required
+                minlength="2"
+                maxlength="30"
+                readonly
+              />
+            </div>
+            <div class="form-group">
+              <label for="signupPassword">Password</label>
+              <input
+                type="password"
+                id="signupPassword"
+                placeholder="Minimum 6 characters"
+                required
+                minlength="6"
+              />
+            </div>
+            <div class="form-group">
+              <label for="signupConfirm">Confirm Password</label>
+              <input
+                type="password"
+                id="signupConfirm"
+                placeholder="Re-enter password"
+                required
+                minlength="6"
+              />
+            </div>
+            <button
+              type="submit"
+              class="btn btn-primary btn-full"
+              id="signupBtn"
+            >
+              <span>Create Account</span> <i class="fas fa-check"></i>
+            </button>
+          </form>
+          <button
+            class="btn btn-ghost btn-full"
+            id="backToLogin"
+            style="margin-top: 10px"
+          >
+            <i class="fas fa-arrow-left"></i> Back to Login
+          </button>
+          <div id="signupError" class="form-error hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Config Screen (shown when no Supabase credentials) -->
+    <div class="screen" id="configScreen">
+      <div class="auth-card">
+        <div class="auth-header">
+          <i class="fas fa-cog"></i>
+          <h1>Setup Required</h1>
+          <p>Enter your Supabase project credentials</p>
+        </div>
+        <form id="configForm" autocomplete="off">
+          <div class="form-group">
+            <label>Supabase URL</label>
+            <input
+              type="url"
+              id="cfgUrl"
+              placeholder="https://your-project.supabase.co"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label>Supabase Anon Key</label>
+            <input
+              type="text"
+              id="cfgKey"
+              placeholder="eyJhbGciOiJIUzI1NiIs..."
+              required
+            />
+          </div>
+          <button type="submit" class="btn btn-primary btn-full">
+            <i class="fas fa-plug"></i> Connect & Continue
+          </button>
+        </form>
+        <p class="config-hint">
+          Get these from Supabase Dashboard &rarr; Settings &rarr; API.<br />They
+          will be saved in your browser only.
+        </p>
+      </div>
+    </div>
+
+    <!-- Session Screen -->
+    <div class="screen" id="sessionScreen">
+      <div class="session-header">
+        <h1>Welcome, <span id="sessionUserName"></span></h1>
+        <p>Create a new session or join an existing one</p>
+      </div>
+      <div class="session-cards">
+        <div class="session-card">
+          <h2><i class="fas fa-plus-circle"></i> Create Session</h2>
+          <form id="createForm" autocomplete="off">
+            <div class="form-group">
+              <label for="createName">Session Name</label>
+              <input
+                type="text"
+                id="createName"
+                placeholder="My Workspace"
+                required
+              />
+            </div>
+            <div class="form-group">
+              <label for="createPassword">Password</label>
+              <input
+                type="password"
+                id="createPassword"
+                placeholder="Min 4 characters"
+                required
+                minlength="4"
+              />
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">
+              <i class="fas fa-plus"></i> Create
+            </button>
+          </form>
+        </div>
+        <div class="session-card">
+          <h2><i class="fas fa-sign-in-alt"></i> Join Session</h2>
+          <form id="joinForm" autocomplete="off">
+            <div class="form-group">
+              <label for="joinId">Session ID</label>
+              <input
+                type="text"
+                id="joinId"
+                placeholder="6-character code"
+                required
+                maxlength="6"
+                style="text-transform: uppercase"
+              />
+            </div>
+            <div class="form-group">
+              <label for="joinPassword">Password</label>
+              <input
+                type="password"
+                id="joinPassword"
+                placeholder="Session password"
+                required
+              />
+            </div>
+            <button type="submit" class="btn btn-secondary btn-full">
+              <i class="fas fa-arrow-right"></i> Join
+            </button>
+          </form>
+        </div>
+      </div>
+      <button class="btn btn-ghost" id="logoutBtn">
+        <i class="fas fa-sign-out-alt"></i> Logout
+      </button>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard">
+      <div class="sidebar-overlay" id="sidebarOverlay"></div>
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <i class="fas fa-rocket"></i><span>SyncSpace</span>
+          </div>
+          <button
+            class="btn-icon mobile-only"
+            id="closeSidebar"
+            aria-label="Close sidebar"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="sidebar-search">
+          <i class="fas fa-search"></i>
+          <input
+            type="text"
+            id="sectionSearch"
+            placeholder="Search sections..."
+          />
+        </div>
+        <div class="sidebar-sections" id="sectionsList"></div>
+        <button class="btn btn-ghost btn-full sidebar-add" id="addSectionBtn">
+          <i class="fas fa-plus"></i> New Section
+        </button>
+        <div class="sidebar-footer">
+          <div class="user-info">
+            <div class="user-avatar" id="sidebarAvatar"></div>
+            <div class="user-details">
+              <span class="user-name" id="sidebarUserName"></span>
+              <span class="session-id" id="sidebarSessionId"></span>
+            </div>
+          </div>
+          <button class="btn-icon" id="leaveSessionBtn" title="Leave session">
+            <i class="fas fa-sign-out-alt"></i>
+          </button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button
+              class="btn-icon mobile-only"
+              id="menuBtn"
+              aria-label="Open menu"
+            >
+              <i class="fas fa-bars"></i>
+            </button>
+            <h2 id="activeSectionName">Select a section</h2>
+            <div class="connection-status" id="connectionStatus">
+              <span class="status-dot" id="statusDot"></span>
+              <span class="status-text" id="statusText">Connecting</span>
+            </div>
+          </div>
+          <div class="topbar-right">
+            <button class="btn-icon" id="themeToggle" title="Toggle theme">
+              <i class="fas fa-moon" id="themeIcon"></i>
+            </button>
+          </div>
+        </header>
+
+        <nav class="tab-bar" id="tabBar">
+          <button class="tab-btn active" data-tab="editor">
+            <i class="fas fa-pen-to-square"></i><span>Editor</span>
+          </button>
+          <button class="tab-btn" data-tab="files">
+            <i class="fas fa-folder-open"></i><span>Files</span>
+          </button>
+          <button class="tab-btn" data-tab="chat">
+            <i class="fas fa-comments"></i><span>Chat</span
+            ><span class="tab-badge hidden" id="chatBadge">0</span>
+          </button>
+          <button class="tab-btn" data-tab="tasks">
+            <i class="fas fa-list-check"></i><span>Tasks</span>
+          </button>
+          <button class="tab-btn" data-tab="whiteboard">
+            <i class="fas fa-paintbrush"></i><span>Board</span>
+          </button>
+        </nav>
+
+        <div class="tab-content">
+          <!-- Editor -->
+          <div class="tab-panel active" id="editorPanel">
+            <div class="editor-toolbar" id="editorToolbar">
+              <button data-cmd="bold" title="Bold">
+                <i class="fas fa-bold"></i>
+              </button>
+              <button data-cmd="italic" title="Italic">
+                <i class="fas fa-italic"></i>
+              </button>
+              <button data-cmd="underline" title="Underline">
+                <i class="fas fa-underline"></i>
+              </button>
+              <button data-cmd="strikeThrough" title="Strikethrough">
+                <i class="fas fa-strikethrough"></i>
+              </button>
+              <div class="toolbar-sep"></div>
+              <button
+                data-cmd="formatBlock"
+                data-value="h1"
+                title="Heading 1"
+                style="font-size: 14px"
+              >
+                H1
+              </button>
+              <button
+                data-cmd="formatBlock"
+                data-value="h2"
+                title="Heading 2"
+                style="font-size: 12px"
+              >
+                H2
+              </button>
+              <button
+                data-cmd="formatBlock"
+                data-value="h3"
+                title="Heading 3"
+                style="font-size: 11px"
+              >
+                H3
+              </button>
+              <div class="toolbar-sep"></div>
+              <button data-cmd="insertUnorderedList" title="Bullet list">
+                <i class="fas fa-list-ul"></i>
+              </button>
+              <button data-cmd="insertOrderedList" title="Numbered list">
+                <i class="fas fa-list-ol"></i>
+              </button>
+              <button
+                data-cmd="formatBlock"
+                data-value="blockquote"
+                title="Quote"
+              >
+                <i class="fas fa-quote-right"></i>
+              </button>
+            </div>
+            <div
+              class="editor-content"
+              id="editorContent"
+              contenteditable="true"
+              data-placeholder="Select a section and start writing..."
+            ></div>
+            <div class="editor-status">
+              <span id="editorSaveStatus">Ready</span>
+              <span
+                id="editorTypingIndicator"
+                class="hidden"
+                style="color: var(--secondary); font-style: italic"
+                >Someone is typing...</span
+              >
+            </div>
+          </div>
+
+          <!-- Files -->
+          <div class="tab-panel" id="filesPanel">
+            <div class="file-dropzone" id="fileDropzone">
+              <i class="fas fa-cloud-upload-alt"></i>
+              <p>Drop files here or click to upload</p>
+              <span>Images (JPEG, PNG, GIF, WEBP), PDF, TXT — Max 2MB</span>
+              <input
+                type="file"
+                id="fileInput"
+                multiple
+                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain"
+                hidden
+              />
+            </div>
+            <div class="files-grid" id="filesGrid"></div>
+          </div>
+
+          <!-- Chat -->
+          <div class="tab-panel" id="chatPanel">
+            <div class="chat-messages" id="chatMessages">
+              <div class="chat-empty" id="chatEmpty">
+                <i class="fas fa-comments"></i>
+                <p>No messages yet. Say hello!</p>
+              </div>
+            </div>
+            <div class="chat-typing" id="chatTyping"></div>
+            <div class="chat-input-area">
+              <input
+                type="text"
+                id="chatInput"
+                placeholder="Type a message..."
+                maxlength="500"
+                autocomplete="off"
+              />
+              <button class="btn btn-primary" id="chatSendBtn">
+                <i class="fas fa-paper-plane"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Tasks -->
+          <div class="tab-panel" id="tasksPanel">
+            <div class="tasks-stats" id="tasksStats"></div>
+            <div class="tasks-progress">
+              <div
+                class="tasks-progress-bar"
+                id="tasksProgressBar"
+                style="width: 0%"
+              ></div>
+            </div>
+            <div class="tasks-input">
+              <input
+                type="text"
+                id="taskInput"
+                placeholder="Add a new task..."
+                maxlength="200"
+                autocomplete="off"
+              />
+              <button class="btn btn-primary" id="addTaskBtn">
+                <i class="fas fa-plus"></i>
+              </button>
+            </div>
+            <div id="tasksList"></div>
+          </div>
+
+          <!-- Whiteboard -->
+          <div class="tab-panel" id="whiteboardPanel">
+            <div class="whiteboard-toolbar">
+              <button class="wb-tool active" data-tool="pen" title="Pen">
+                <i class="fas fa-pen"></i>
+              </button>
+              <button class="wb-tool" data-tool="eraser" title="Eraser">
+                <i class="fas fa-eraser"></i>
+              </button>
+              <div class="toolbar-sep"></div>
+              <input
+                type="color"
+                id="wbColor"
+                value="#6c5ce7"
+                title="Pick color"
+              />
+              <div class="toolbar-sep"></div>
+              <label class="wb-size-label">
+                <i class="fas fa-circle" style="font-size: 6px"></i>
+                <input type="range" id="wbSize" min="1" max="40" value="3" />
+                <i class="fas fa-circle" style="font-size: 14px"></i>
+              </label>
+              <div class="toolbar-sep"></div>
+              <button class="wb-tool" id="wbClear" title="Clear canvas">
+                <i class="fas fa-trash-alt"></i>
+              </button>
+            </div>
+            <div class="whiteboard-container" id="wbContainer">
+              <canvas id="wbCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Bottom Nav (Mobile) -->
+      <nav class="bottom-nav" id="bottomNav">
+        <button class="bnav-btn active" data-tab="editor">
+          <i class="fas fa-pen-to-square"></i><span>Editor</span>
+        </button>
+        <button class="bnav-btn" data-tab="files">
+          <i class="fas fa-folder-open"></i><span>Files</span>
+        </button>
+        <button class="bnav-btn" data-tab="chat">
+          <i class="fas fa-comments"></i><span>Chat</span
+          ><span class="bnav-badge hidden" id="chatBadgeMobile">0</span>
+        </button>
+        <button class="bnav-btn" data-tab="tasks">
+          <i class="fas fa-list-check"></i><span>Tasks</span>
+        </button>
+        <button class="bnav-btn" data-tab="whiteboard">
+          <i class="fas fa-paintbrush"></i><span>Board</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

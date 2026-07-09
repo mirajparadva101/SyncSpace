@@ -1,16 +1,10 @@
 syncspace/
-├── server.js              # Main Express server (all APIs)
-├── package.json           # Dependencies
-├── .env.example           # Environment template (NO real keys)
-├── vercel.json            # Vercel deployment config
-├── .gitignore             # Git ignore file
-├── README.md
-├── file-structure.txt     # Plain text project structure
-├── public/
-│   ├── index.html         # Main app HTML
-│   ├── app.js             # Complete frontend logic
-│   ├── style.css          # All styles (Dark/Light theme)
-│   ├── manifest.json      # PWA manifest
-│   └── sw.js              # Service Worker
-└── supabase/
-    └── schema.sql         # Database schema
+├── index.html                  # All HTML (Responsive UI)
+├── style.css                   # All CSS (Dark/Light theme, Mobile-first)
+├── app.js                      # Complete JavaScript (Auth + All Features)
+├── manifest.json               # PWA Support
+├── sw.js                       # Service Worker (Offline support)
+├── schema.sql                  # Supabase Database Schema
+├── vercel.json                 # Vercel Deployment Config
+├── README.md                   # Project Documentation
+└── file-structure.txt          # Plain text project structure
