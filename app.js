@@ -1,288 +1,106 @@
 /* ============================================================
-   SyncSpace — Application Logic (rewrite)
-   Fixes: leave/delete navigation, save races, chat/file/todo
-   dedupe, editor merge, whiteboard persist+clear sync, DPR,
-   unread badges, ownership, timers, demo multi-tab fingerprint
+   SyncSpace app.js — Realtime-first rewrite
+   • Chat: id-based upsert (no duplicates)
+   • Editor: DB save + broadcast live content to joiners
+   • Board: stroke broadcast + DB snapshot + clear sync
+   • Session delete: creator-only; joiners auto-leave
+   • Fallback poll if postgres_changes quiet
    ============================================================ */
-
 (() => {
   "use strict";
 
   const SESSION_MS = 30 * 60 * 1000;
-  const SAVE_DEBOUNCE = 800;
-  const MAX_FILE_BYTES = 2 * 1024 * 1024;
-  const MAX_TOASTS = 5;
+  const SAVE_MS = 500;
+  const BOARD_SAVE_MS = 600;
+  const MAX_FILE = 2 * 1024 * 1024;
   const LS = {
-    users: "ss_users_v2",
-    sessions: "ss_sessions_v2",
-    auth: "ss_auth_v2",
-    recent: "ss_recent_v2",
+    users: "ss_users_v3",
+    sessions: "ss_sessions_v3",
+    auth: "ss_auth_v3",
+    recent: "ss_recent_v3",
   };
 
-  const ALLOWED_MIME = new Set([
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "application/pdf",
-    "text/plain",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ]);
-
-  // -------------------- State --------------------
   const S = {
     sb: null,
     demo: true,
     user: null,
-    session: null, // { id, name, created_by, ends_at, passwordHash? }
+    session: null,
     sections: [],
     activeSectionId: null,
     texts: {},
     files: [],
     todos: [],
     messages: [],
+    msgById: new Map(),
     boardData: "",
     channel: null,
+    channelName: null,
     demoPoll: null,
+    fallbackPoll: null,
     saveTimer: null,
-    saveGeneration: 0,
+    boardTimer: null,
     timerInterval: null,
     timerEndsAt: null,
     unreadChat: 0,
-    knownMessageIds: new Set(),
     activePanel: "editor",
     wb: { tool: "pen", drawing: false, last: null, dpr: 1, bound: false },
     connected: false,
     remoteTyping: null,
     typingClear: null,
-    typingThrottle: 0,
-    boardSaveTimer: null,
-    presence: {},
-    applyingRemoteEditor: false,
-    statsAnimated: false,
+    typingAt: 0,
+    applyingEditor: false,
+    editorDirty: false,
+    lastLocalEditAt: 0,
+    clientId: uid(10),
     leaving: false,
+    presence: {},
+    statsAnimated: false,
+    lastTextHash: {},
+    lastBoardHash: "",
   };
 
-  // -------------------- Demo store --------------------
-  const Demo = {
-    users: safeParse(localStorage.getItem(LS.users), {}),
-    sessions: safeParse(localStorage.getItem(LS.sessions), {}),
-    persist() {
-      try {
-        localStorage.setItem(LS.users, JSON.stringify(this.users));
-        localStorage.setItem(LS.sessions, JSON.stringify(this.sessions));
-      } catch (err) {
-        if (err && (err.name === "QuotaExceededError" || err.code === 22)) {
-          toast(
-            "Storage full — remove some files or clear old sessions",
-            "error",
-            5000,
-          );
-        }
-        throw err;
-      }
-    },
-    getSessionData(id) {
-      if (!id || !this.sessions[id]) return null;
-      if (!this.sessions[id].data) {
-        this.sessions[id].data = emptySessionData();
-      }
-      return this.sessions[id].data;
-    },
-    fingerprint(id) {
-      const d = this.getSessionData(id);
-      if (!d) return "";
-      return [
-        d.messages.length,
-        d.messages.map((m) => m.id).join(","),
-        d.todos
-          .map((t) => `${t.id}:${t.completed ? 1 : 0}:${t.text}`)
-          .join("|"),
-        d.files.map((f) => f.id).join(","),
-        d.sections.map((s) => `${s.id}:${s.name}`).join("|"),
-        (d.board || "").length,
-        Object.keys(d.texts || {})
-          .map(
-            (k) =>
-              `${k}:${(d.texts[k].content || "").length}:${d.texts[k].updated_at || ""}`,
-          )
-          .join(";"),
-      ].join("::");
-    },
-  };
+  /* ---------- utils ---------- */
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-  function emptySessionData() {
-    return {
-      sections: [],
-      texts: {},
-      messages: [],
-      todos: [],
-      files: [],
-      versions: {},
-      board: "",
-    };
+  function uid(n = 6) {
+    const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const a = crypto.getRandomValues(new Uint8Array(n));
+    return [...a].map((x) => c[x % c.length]).join("");
   }
-
-  function safeParse(raw, fallback) {
-    try {
-      return raw ? JSON.parse(raw) : fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
-  // -------------------- DOM helpers --------------------
-  const $ = (sel, root = document) => root.querySelector(sel);
-  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
-
-  function showView(name) {
-    $$(".view").forEach((v) => v.classList.remove("active"));
-    const el = $(`#view-${name}`);
-    if (el) el.classList.add("active");
-    closeMobileNav();
-    closeSidebar();
-    if (name === "landing") animateStats();
-    if (name === "hub") renderRecentSessions();
-    if (name === "dashboard") {
-      requestAnimationFrame(() => {
-        if (S.activePanel === "whiteboard") resizeWhiteboard(true);
-      });
-    }
-  }
-
-  function setLoading(on, text = "Loading…") {
-    const el = $("#loading");
-    if (!el) return;
-    el.hidden = !on;
-    const t = $("#loading-text");
-    if (t) t.textContent = text;
-  }
-
-  function toast(message, type = "info", ms = 3200) {
-    const wrap = $("#toasts");
-    if (!wrap) return;
-    while (wrap.children.length >= MAX_TOASTS) wrap.firstElementChild.remove();
-    const el = document.createElement("div");
-    el.className = `toast ${type}`;
-    const icon =
-      type === "success"
-        ? "fa-circle-check"
-        : type === "error"
-          ? "fa-circle-exclamation"
-          : "fa-circle-info";
-    el.innerHTML = `<i class="fa-solid ${icon}"></i><span></span>`;
-    el.querySelector("span").textContent = message;
-    wrap.appendChild(el);
-    setTimeout(() => {
-      el.classList.add("out");
-      setTimeout(() => el.remove(), 320);
-    }, ms);
-  }
-
-  function setConn(status) {
-    const dot = $("#conn-dot");
-    if (!dot) return;
-    dot.classList.remove("online", "offline");
-    if (status === "online") {
-      dot.classList.add("online");
-      S.connected = true;
-      dot.title = "Connected";
-    } else if (status === "offline") {
-      dot.classList.add("offline");
-      S.connected = false;
-      dot.title = "Offline";
-    } else {
-      S.connected = false;
-      dot.title = "Connecting…";
-    }
-  }
-
-  function setSaveStatus(state) {
-    const el = $("#save-status");
-    if (!el) return;
-    el.classList.remove("saving", "saved", "error");
-    if (state === "saving") {
-      el.textContent = "Saving…";
-      el.classList.add("saving");
-    } else if (state === "saved") {
-      el.textContent = "Saved";
-      el.classList.add("saved");
-    } else if (state === "error") {
-      el.textContent = "Save failed";
-      el.classList.add("error");
-    } else if (state === "conflict") {
-      el.textContent = "Updated remotely";
-      el.classList.add("saving");
-    } else {
-      el.textContent = state;
-    }
-  }
-
-  function initials(name = "U") {
-    return (
-      String(name || "U")
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((p) => p[0].toUpperCase())
-        .join("") || "U"
-    );
-  }
-
-  function avatarColor(seed = "") {
-    let h = 0;
-    const s = String(seed);
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    const hue = h % 360;
-    return `linear-gradient(135deg, hsl(${hue} 70% 55%), hsl(${(hue + 40) % 360} 70% 45%))`;
-  }
-
-  function uid(len = 6) {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let out = "";
-    const arr = crypto.getRandomValues(new Uint8Array(len));
-    for (let i = 0; i < len; i++) out += chars[arr[i] % chars.length];
-    return out;
-  }
-
   function uuid() {
-    if (crypto.randomUUID) return crypto.randomUUID();
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === "x" ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
+    return crypto.randomUUID
+      ? crypto.randomUUID()
+      : uid(8) + "-" + uid(4) + "-" + uid(8);
   }
-
-  async function sha256(text) {
-    if (!window.crypto?.subtle) {
-      throw new Error(
-        "Secure context required (use HTTPS) for password hashing",
-      );
+  function safeParse(raw, fb) {
+    try {
+      return raw ? JSON.parse(raw) : fb;
+    } catch {
+      return fb;
     }
-    const data = new TextEncoder().encode(text);
-    const hash = await crypto.subtle.digest("SHA-256", data);
-    return [...new Uint8Array(hash)]
+  }
+  async function sha256(text) {
+    if (!crypto?.subtle) throw new Error("Use HTTPS for hashing");
+    const buf = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(text),
+    );
+    return [...new Uint8Array(buf)]
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
   }
-
-  function escapeHtml(str) {
-    return String(str)
+  function escapeHtml(s) {
+    return String(s)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
   }
-
-  /** Basic HTML sanitizer for editor content (no scripts/handlers) */
   function sanitizeHtml(html) {
-    const template = document.createElement("template");
-    template.innerHTML = String(html || "");
-    const banned = new Set([
+    const t = document.createElement("template");
+    t.innerHTML = String(html || "");
+    const ban = new Set([
       "SCRIPT",
       "STYLE",
       "IFRAME",
@@ -297,45 +115,55 @@
       "TEXTAREA",
       "SELECT",
     ]);
-    const walk = (node) => {
-      const children = [...node.childNodes];
-      for (const child of children) {
-        if (child.nodeType === 1) {
-          const tag = child.tagName;
-          if (banned.has(tag)) {
-            child.remove();
-            continue;
+    (function walk(n) {
+      [...n.childNodes].forEach((ch) => {
+        if (ch.nodeType === 1) {
+          if (ban.has(ch.tagName)) {
+            ch.remove();
+            return;
           }
-          [...child.attributes].forEach((attr) => {
-            const n = attr.name.toLowerCase();
-            const v = attr.value || "";
-            if (n.startsWith("on") || n === "srcdoc" || n === "formaction") {
-              child.removeAttribute(attr.name);
-            } else if (
-              (n === "href" || n === "src" || n === "xlink:href") &&
-              /^\s*javascript:/i.test(v)
-            ) {
-              child.removeAttribute(attr.name);
-            }
+          [...ch.attributes].forEach((at) => {
+            const name = at.name.toLowerCase();
+            if (
+              name.startsWith("on") ||
+              /^\s*javascript:/i.test(at.value || "")
+            )
+              ch.removeAttribute(at.name);
           });
-          walk(child);
-        } else if (child.nodeType === 8) {
-          child.remove();
-        }
-      }
-    };
-    walk(template.content);
-    return template.innerHTML;
+          walk(ch);
+        } else if (ch.nodeType === 8) ch.remove();
+      });
+    })(t.content);
+    return t.innerHTML;
   }
-
+  function initials(name = "U") {
+    return (
+      String(name || "U")
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((p) => p[0].toUpperCase())
+        .join("") || "U"
+    );
+  }
+  function avatarColor(seed = "") {
+    let h = 0;
+    for (let i = 0; i < seed.length; i++)
+      h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    return `linear-gradient(135deg,hsl(${h % 360} 70% 55%),hsl(${(h + 40) % 360} 70% 45%))`;
+  }
+  function normalizeUserId(id) {
+    return String(id || "")
+      .trim()
+      .toLowerCase();
+  }
   function formatBytes(n) {
-    const num = Number(n);
-    if (!Number.isFinite(num) || num < 0) return "—";
-    if (num < 1024) return `${num} B`;
-    if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
-    return `${(num / (1024 * 1024)).toFixed(2)} MB`;
+    const x = Number(n);
+    if (!Number.isFinite(x) || x < 0) return "—";
+    if (x < 1024) return `${x} B`;
+    if (x < 1048576) return `${(x / 1024).toFixed(1)} KB`;
+    return `${(x / 1048576).toFixed(2)} MB`;
   }
-
   function formatTime(iso) {
     try {
       return new Date(iso).toLocaleTimeString([], {
@@ -346,240 +174,309 @@
       return "";
     }
   }
-
   function formatDateLabel(iso) {
     try {
-      const d = new Date(iso);
-      const today = new Date();
-      const yday = new Date();
-      yday.setDate(today.getDate() - 1);
-      if (d.toDateString() === today.toDateString()) return "Today";
-      if (d.toDateString() === yday.toDateString()) return "Yesterday";
+      const d = new Date(iso),
+        t = new Date(),
+        y = new Date();
+      y.setDate(t.getDate() - 1);
+      if (d.toDateString() === t.toDateString()) return "Today";
+      if (d.toDateString() === y.toDateString()) return "Yesterday";
       return d.toLocaleDateString();
     } catch {
       return "";
     }
   }
-
-  function normalizeUserId(id) {
-    return String(id || "")
-      .trim()
-      .toLowerCase();
+  function cleanCfg(v) {
+    if (v == null) return "";
+    let s = String(v).trim();
+    if ((s[0] === '"' && s.endsWith('"')) || (s[0] === "'" && s.endsWith("'")))
+      s = s.slice(1, -1).trim();
+    return s;
   }
-
-  function isEditorVisuallyEmpty(el) {
+  function normUrl(u) {
+    let s = cleanCfg(u);
+    if (!s) return "";
+    if (!s.includes("://")) s = "https://" + s.replace(/^\/+/, "");
+    if (s.startsWith("http://")) s = "https://" + s.slice(7);
+    return s.replace(/\/$/, "");
+  }
+  function hashStr(s) {
+    let h = 2166136261;
+    const str = String(s || "");
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16);
+  }
+  function isEditorEmpty(el) {
     if (!el) return true;
-    const text = (el.innerText || "").replace(/\u00a0/g, " ").trim();
-    if (text.length) return false;
-    const html = (el.innerHTML || "").replace(/\s+/g, "").toLowerCase();
+    if ((el.innerText || "").replace(/\u00a0/g, " ").trim()) return false;
+    const h = (el.innerHTML || "").replace(/\s+/g, "").toLowerCase();
     return (
-      !html ||
-      html === "<br>" ||
-      html === "<div><br></div>" ||
-      html === "<p><br></p>" ||
-      html === "<p></p>"
+      !h ||
+      h === "<br>" ||
+      h === "<div><br></div>" ||
+      h === "<p><br></p>" ||
+      h === "<p></p>"
     );
   }
-
-  function updateEditorEmptyClass() {
+  function updateEditorEmpty() {
     const ed = $("#editor");
-    if (!ed) return;
-    ed.classList.toggle("is-empty", isEditorVisuallyEmpty(ed));
+    if (ed) ed.classList.toggle("is-empty", isEditorEmpty(ed));
   }
 
+  /* ---------- UI chrome ---------- */
+  function showView(name) {
+    $$(".view").forEach((v) => v.classList.remove("active"));
+    $(`#view-${name}`)?.classList.add("active");
+    closeSidebar();
+    closeMobileNav();
+    if (name === "landing") animateStats();
+    if (name === "hub") renderRecent();
+    if (name === "dashboard" && S.activePanel === "whiteboard") {
+      requestAnimationFrame(() => resizeWhiteboard(true));
+    }
+  }
+  function setLoading(on, text = "Loading…") {
+    const el = $("#loading");
+    if (!el) return;
+    el.hidden = !on;
+    const t = $("#loading-text");
+    if (t) t.textContent = text;
+  }
+  function toast(msg, type = "info", ms = 3200) {
+    const wrap = $("#toasts");
+    if (!wrap) return;
+    while (wrap.children.length >= 5) wrap.firstChild.remove();
+    const el = document.createElement("div");
+    el.className = `toast ${type}`;
+    const icon =
+      type === "success"
+        ? "fa-circle-check"
+        : type === "error"
+          ? "fa-circle-exclamation"
+          : "fa-circle-info";
+    el.innerHTML = `<i class="fa-solid ${icon}"></i><span></span>`;
+    el.querySelector("span").textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(() => {
+      el.classList.add("out");
+      setTimeout(() => el.remove(), 300);
+    }, ms);
+  }
+  function setConn(st) {
+    const d = $("#conn-dot");
+    if (!d) return;
+    d.classList.remove("online", "offline");
+    if (st === "online") {
+      d.classList.add("online");
+      S.connected = true;
+      d.title = "Connected";
+    } else if (st === "offline") {
+      d.classList.add("offline");
+      S.connected = false;
+      d.title = "Offline";
+    } else {
+      S.connected = false;
+      d.title = "Connecting…";
+    }
+  }
+  function setSaveStatus(state) {
+    const el = $("#save-status");
+    if (!el) return;
+    el.classList.remove("saving", "saved", "error");
+    if (state === "saving") {
+      el.textContent = "Saving…";
+      el.classList.add("saving");
+    } else if (state === "saved") {
+      el.textContent = "Saved";
+      el.classList.add("saved");
+    } else if (state === "error") {
+      el.textContent = "Save failed";
+      el.classList.add("error");
+    } else if (state === "live") {
+      el.textContent = "Live update";
+      el.classList.add("saving");
+    } else el.textContent = state;
+  }
   function closeMobileNav() {
-    const links = $("#nav-links");
-    const toggle = $("#nav-toggle");
-    links?.classList.remove("open");
-    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    $("#nav-links")?.classList.remove("open");
+    $("#nav-toggle")?.setAttribute("aria-expanded", "false");
   }
-
   function closeSidebar() {
     $("#sidebar")?.classList.remove("open");
-    const bd = $("#sidebar-backdrop");
-    if (bd) bd.hidden = true;
+    const b = $("#sidebar-backdrop");
+    if (b) b.hidden = true;
   }
-
   function openSidebar() {
     $("#sidebar")?.classList.add("open");
-    const bd = $("#sidebar-backdrop");
-    if (bd) bd.hidden = false;
+    const b = $("#sidebar-backdrop");
+    if (b) b.hidden = false;
   }
 
-  // -------------------- Config / Supabase --------------------
-  async function initSupabase() {
-    let url = "";
-    let key = "";
+  /* ---------- Demo store ---------- */
+  function emptyData() {
+    return {
+      sections: [],
+      texts: {},
+      messages: [],
+      todos: [],
+      files: [],
+      versions: {},
+      board: "",
+    };
+  }
+  const Demo = {
+    users: safeParse(localStorage.getItem(LS.users), {}),
+    sessions: safeParse(localStorage.getItem(LS.sessions), {}),
+    persist() {
+      try {
+        localStorage.setItem(LS.users, JSON.stringify(this.users));
+        localStorage.setItem(LS.sessions, JSON.stringify(this.sessions));
+        localStorage.setItem(LS.sessions + "_tick", String(Date.now()));
+      } catch (e) {
+        if (e?.name === "QuotaExceededError")
+          toast("Storage full — delete files/sessions", "error", 5000);
+        throw e;
+      }
+    },
+    reload() {
+      this.users = safeParse(localStorage.getItem(LS.users), this.users);
+      this.sessions = safeParse(
+        localStorage.getItem(LS.sessions),
+        this.sessions,
+      );
+    },
+    data(id) {
+      if (!id || !this.sessions[id]) return null;
+      if (!this.sessions[id].data) this.sessions[id].data = emptyData();
+      return this.sessions[id].data;
+    },
+  };
 
+  /* ---------- Supabase init ---------- */
+  async function initSupabase() {
+    let url = "",
+      key = "";
     if (window.SYNCSPACE_CONFIG?.url && window.SYNCSPACE_CONFIG?.key) {
-      url = window.SYNCSPACE_CONFIG.url;
-      key = window.SYNCSPACE_CONFIG.key;
+      url = normUrl(window.SYNCSPACE_CONFIG.url);
+      key = cleanCfg(window.SYNCSPACE_CONFIG.key);
     } else {
       try {
         const res = await fetch("/api/config", { cache: "no-store" });
         if (res.ok) {
           const cfg = await res.json();
-          url = cfg.url || "";
-          key = cfg.key || "";
+          url = normUrl(cfg.url || "");
+          key = cleanCfg(cfg.key || "");
         }
       } catch {
         /* demo */
       }
     }
-
     if (url && key && window.supabase) {
+      if (!(key.startsWith("eyJ") || key.startsWith("sb_"))) {
+        toast("Invalid Supabase key format", "error", 6000);
+        S.demo = true;
+        S.sb = null;
+        setConn("online");
+        return false;
+      }
       S.sb = window.supabase.createClient(url, key, {
-        realtime: { params: { eventsPerSecond: 20 } },
+        auth: { persistSession: false, autoRefreshToken: false },
+        realtime: { params: { eventsPerSecond: 30 } },
       });
+      // Probe
+      const { error } = await S.sb
+        .from("users")
+        .select("user_id", { head: true, count: "exact" })
+        .limit(1);
+      if (
+        error &&
+        (error.status === 401 ||
+          /jwt|api key|unauthorized/i.test(error.message || ""))
+      ) {
+        toast("Supabase 401: fix SUPABASE_ANON_KEY & redeploy", "error", 7000);
+        S.sb = null;
+        S.demo = true;
+        setConn("online");
+        return false;
+      }
+      if (error && /permission denied/i.test(error.message || "")) {
+        toast(
+          "permission denied — run supabase-fix.sql in SQL Editor",
+          "error",
+          8000,
+        );
+      }
       S.demo = false;
-      setConn("connecting");
+      setConn("online");
+      console.info("[SyncSpace] Supabase ready", url);
       return true;
     }
-
     S.demo = true;
     S.sb = null;
     setConn("online");
-    console.info(
-      "[SyncSpace] DEMO mode (localStorage). Configure Supabase for multi-device realtime.",
-    );
+    console.info("[SyncSpace] DEMO mode");
     return false;
   }
 
-  // -------------------- Stats --------------------
-  function animateCounter(el, target, duration = 1200) {
-    const start = performance.now();
-    const prefersReduce = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    if (prefersReduce) {
-      el.textContent = Math.round(target).toLocaleString();
-      return;
-    }
-    function frame(now) {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      el.textContent = Math.round(target * eased).toLocaleString();
-      if (t < 1) requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-  }
-
-  async function loadLandingStats() {
-    let users = 0;
-    let sessions = 0;
-    let messages = 0;
-    let tasks = 0;
-
-    if (!S.demo && S.sb) {
-      try {
-        const [u, s, m, t] = await Promise.all([
-          S.sb.from("users").select("*", { count: "exact", head: true }),
-          S.sb.from("sessions").select("*", { count: "exact", head: true }),
-          S.sb
-            .from("chat_messages")
-            .select("*", { count: "exact", head: true }),
-          S.sb
-            .from("todos")
-            .select("*", { count: "exact", head: true })
-            .eq("completed", true),
-        ]);
-        users = u.count || 0;
-        sessions = s.count || 0;
-        messages = m.count || 0;
-        tasks = t.count || 0;
-      } catch {
-        /* zeros */
-      }
-    } else {
-      users = Object.keys(Demo.users).length;
-      sessions = Object.keys(Demo.sessions).length;
-      Object.values(Demo.sessions).forEach((sess) => {
-        const d = sess.data || {};
-        messages += (d.messages || []).length;
-        tasks += (d.todos || []).filter((x) => x.completed).length;
-      });
-    }
-    return { users, sessions, messages, tasks };
-  }
-
-  async function animateStats() {
-    const stats = await loadLandingStats();
-    const map = {
-      users: stats.users,
-      sessions: stats.sessions,
-      messages: stats.messages,
-      tasks: stats.tasks,
-    };
-    $$("[data-stat]").forEach((el) => {
-      const key = el.dataset.stat;
-      const val = map[key] || 0;
-      if (S.statsAnimated) el.textContent = val.toLocaleString();
-      else animateCounter(el, val);
-    });
-    S.statsAnimated = true;
-  }
-
-  // -------------------- Auth --------------------
-  function persistUserSession() {
+  /* ---------- Auth ---------- */
+  function persistAuth() {
     if (S.user) localStorage.setItem(LS.auth, JSON.stringify(S.user));
     else localStorage.removeItem(LS.auth);
   }
-
-  function restoreUserSession() {
+  function restoreAuth() {
     return safeParse(localStorage.getItem(LS.auth), null);
   }
-
   function showLogin() {
     $("#auth-login").hidden = false;
     $("#auth-signup").hidden = true;
     $("#login-error").hidden = true;
   }
-
-  function showSignup(prefillId = "") {
+  function showSignup(pre = "") {
     $("#auth-login").hidden = true;
     $("#auth-signup").hidden = false;
     $("#signup-error").hidden = true;
-    if (prefillId) $("#signup-userid").value = prefillId;
+    if (pre) $("#signup-userid").value = pre;
   }
-
-  function updatePasswordStrength(pw) {
+  function updatePwStrength(pw) {
     const box = $("#pw-strength");
     if (!box) return;
-    let score = 0;
-    if (pw.length >= 6) score++;
-    if (pw.length >= 10) score++;
-    if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
-    if (/\d/.test(pw) || /[^A-Za-z0-9]/.test(pw)) score++;
+    let sc = 0;
+    if (pw.length >= 6) sc++;
+    if (pw.length >= 10) sc++;
+    if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) sc++;
+    if (/\d/.test(pw) || /[^A-Za-z0-9]/.test(pw)) sc++;
     box.classList.remove("weak", "medium", "strong");
-    const label = box.querySelector(".strength-label");
+    const lab = box.querySelector(".strength-label");
     if (!pw) {
-      label.textContent = "Weak";
+      lab.textContent = "Weak";
       return;
     }
-    if (score <= 1) {
+    if (sc <= 1) {
       box.classList.add("weak");
-      label.textContent = "Weak";
-    } else if (score <= 2) {
+      lab.textContent = "Weak";
+    } else if (sc <= 2) {
       box.classList.add("medium");
-      label.textContent = "Medium";
+      lab.textContent = "Medium";
     } else {
       box.classList.add("strong");
-      label.textContent = "Strong";
+      lab.textContent = "Strong";
     }
   }
-
   async function findUser(userId) {
     const id = normalizeUserId(userId);
     if (S.demo) return Demo.users[id] || null;
     const { data, error } = await S.sb
       .from("users")
-      .select("user_id, name, password, role, created_at")
+      .select("user_id,name,password,role,created_at")
       .eq("user_id", id)
       .maybeSingle();
     if (error) throw error;
     return data;
   }
-
   async function createUser({ user_id, name, password }) {
     const id = normalizeUserId(user_id);
     const hash = await sha256(password);
@@ -603,137 +500,113 @@
         password: hash,
         role: "member",
       })
-      .select("user_id, name, role, created_at")
+      .select("user_id,name,role")
       .single();
     if (error) throw error;
     return data;
   }
-
   async function handleLogin(e) {
     e.preventDefault();
     const userId = normalizeUserId($("#login-userid").value);
     const password = $("#login-password").value;
-    const errEl = $("#login-error");
-    errEl.hidden = true;
+    const err = $("#login-error");
+    err.hidden = true;
     const btn = $("#login-btn");
     btn.disabled = true;
     btn.querySelector(".btn-spinner").hidden = false;
-
     try {
-      if (userId.length < 3)
-        throw new Error("User ID must be at least 3 characters");
-      if (password.length < 6)
-        throw new Error("Password must be at least 6 characters");
+      if (userId.length < 3) throw new Error("User ID min 3 chars");
+      if (password.length < 6) throw new Error("Password min 6 chars");
       const user = await findUser(userId);
       if (!user) {
-        toast("Account not found — create one to continue", "info");
+        toast("Account not found — create one", "info");
         showSignup(userId);
         return;
       }
-      const hash = await sha256(password);
-      if (hash !== user.password) throw new Error("Incorrect password");
+      if ((await sha256(password)) !== user.password)
+        throw new Error("Incorrect password");
       S.user = {
         user_id: user.user_id,
         name: user.name,
         role: user.role || "member",
       };
-      persistUserSession();
+      persistAuth();
       enterHub();
-      toast(`Welcome back, ${S.user.name}!`, "success");
-    } catch (err) {
-      errEl.textContent = err.message || "Login failed";
-      errEl.hidden = false;
+      toast(`Welcome, ${S.user.name}!`, "success");
+    } catch (ex) {
+      err.textContent = ex.message || "Login failed";
+      err.hidden = false;
     } finally {
       btn.disabled = false;
       btn.querySelector(".btn-spinner").hidden = true;
     }
   }
-
   async function handleSignup(e) {
     e.preventDefault();
     const name = $("#signup-name").value.trim();
     const userId = normalizeUserId($("#signup-userid").value);
     const password = $("#signup-password").value;
     const confirm = $("#signup-confirm").value;
-    const errEl = $("#signup-error");
-    errEl.hidden = true;
+    const err = $("#signup-error");
+    err.hidden = true;
     const btn = $("#signup-btn");
     btn.disabled = true;
     btn.querySelector(".btn-spinner").hidden = false;
-
     try {
-      if (name.length < 2) throw new Error("Please enter your full name");
-      if (userId.length < 3)
-        throw new Error("User ID must be at least 3 characters");
-      if (!/^[a-z0-9_.-]+$/.test(userId))
-        throw new Error("User ID: letters, numbers, _ . - only");
-      if (password.length < 6)
-        throw new Error("Password must be at least 6 characters");
+      if (name.length < 2) throw new Error("Enter full name");
+      if (userId.length < 3 || !/^[a-z0-9_.-]+$/.test(userId))
+        throw new Error("Invalid User ID");
+      if (password.length < 6) throw new Error("Password min 6 chars");
       if (password !== confirm) throw new Error("Passwords do not match");
-      // Block very weak passwords
-      if (
-        password === userId ||
-        password === "123456" ||
-        password === "password"
-      ) {
-        throw new Error("Password is too common — choose a stronger one");
-      }
-
-      const existing = await findUser(userId);
-      if (existing) throw new Error("User ID already taken");
-
+      if (await findUser(userId)) throw new Error("User ID taken");
       const user = await createUser({ user_id: userId, name, password });
       S.user = {
         user_id: user.user_id,
         name: user.name,
         role: user.role || "member",
       };
-      persistUserSession();
+      persistAuth();
       enterHub();
-      toast("Account created successfully!", "success");
-    } catch (err) {
-      errEl.textContent = err.message || "Signup failed";
-      errEl.hidden = false;
+      toast("Account created!", "success");
+    } catch (ex) {
+      err.textContent = ex.message || "Signup failed";
+      err.hidden = false;
     } finally {
       btn.disabled = false;
       btn.querySelector(".btn-spinner").hidden = true;
     }
   }
-
   async function logout() {
-    await leaveSession({ silent: true, skipSave: false });
+    await leaveSession({ silent: true });
     S.user = null;
-    persistUserSession();
+    persistAuth();
     showLogin();
     showView("auth");
     toast("Logged out", "info");
   }
-
   function enterHub() {
     if (!S.user) return showView("auth");
     $("#hub-name").textContent = S.user.name;
-    $("#hub-userid").textContent = `@${S.user.user_id}`;
+    $("#hub-userid").textContent = "@" + S.user.user_id;
     const av = $("#hub-avatar");
     av.textContent = initials(S.user.name);
     av.style.background = avatarColor(S.user.user_id);
     showView("hub");
   }
 
-  // -------------------- Recent sessions (device) --------------------
+  /* ---------- Recent ---------- */
   function getRecent() {
     return safeParse(localStorage.getItem(LS.recent), []);
   }
-
-  function pushRecent(session) {
-    if (!session?.id) return;
-    const list = getRecent().filter((r) => r.id !== session.id);
-    list.unshift({ id: session.id, name: session.name, at: Date.now() });
+  function pushRecent(sess) {
+    if (!sess?.id) return;
+    const list = getRecent().filter((r) => r.id !== sess.id);
+    list.unshift({ id: sess.id, name: sess.name, at: Date.now() });
     localStorage.setItem(LS.recent, JSON.stringify(list.slice(0, 8)));
   }
-
-  function renderRecentSessions() {
-    const box = $("#hub-recent");
-    const list = $("#recent-list");
+  function renderRecent() {
+    const box = $("#hub-recent"),
+      list = $("#recent-list");
     if (!box || !list) return;
     const recent = getRecent();
     if (!recent.length) {
@@ -744,21 +617,20 @@
     list.innerHTML = "";
     recent.forEach((r) => {
       const li = document.createElement("li");
-      li.innerHTML = `<span class="mono"></span><span class="recent-name"></span>`;
+      li.innerHTML = `<span class="mono"></span><span></span>`;
       li.querySelector(".mono").textContent = r.id;
-      li.querySelector(".recent-name").textContent = r.name || "";
-      li.title = "Click to fill Join form";
+      li.querySelector("span:last-child").textContent = r.name || "";
       li.style.cursor = "pointer";
-      li.addEventListener("click", () => {
+      li.onclick = () => {
         $("#join-id").value = r.id;
         $("#join-password").focus();
-      });
+      };
       list.appendChild(li);
     });
   }
 
-  // -------------------- Sessions --------------------
-  async function generateUniqueSessionId() {
+  /* ---------- Sessions ---------- */
+  async function uniqueSessionId() {
     for (let i = 0; i < 12; i++) {
       const id = uid(6);
       if (S.demo) {
@@ -773,29 +645,25 @@
         if (!data) return id;
       }
     }
-    throw new Error("Could not allocate session ID — try again");
+    throw new Error("Could not allocate session ID");
   }
-
   async function createSession(name, password) {
-    const cleanName = String(name || "").trim();
-    if (!cleanName) throw new Error("Session name is required");
-    if (password.length < 3)
-      throw new Error("Session password must be at least 3 characters");
-
-    const id = await generateUniqueSessionId();
+    const clean = String(name || "").trim();
+    if (!clean) throw new Error("Session name required");
+    if (password.length < 3) throw new Error("Session password min 3 chars");
+    const id = await uniqueSessionId();
     const hash = await sha256(password);
     const endsAt = new Date(Date.now() + SESSION_MS).toISOString();
-
     if (S.demo) {
       const secId = uuid();
       Demo.sessions[id] = {
         id,
-        name: cleanName,
+        name: clean,
         password: hash,
         created_by: S.user.user_id,
         ends_at: endsAt,
         created_at: new Date().toISOString(),
-        data: emptySessionData(),
+        data: emptyData(),
       };
       Demo.sessions[id].data.sections.push({
         id: secId,
@@ -812,23 +680,18 @@
         updated_at: new Date().toISOString(),
       };
       Demo.persist();
-      return {
+      return { id, name: clean, created_by: S.user.user_id, ends_at: endsAt };
+    }
+    const { error } = await S.sb
+      .from("sessions")
+      .insert({
         id,
-        name: cleanName,
+        name: clean,
+        password: hash,
         created_by: S.user.user_id,
         ends_at: endsAt,
-      };
-    }
-
-    const { error } = await S.sb.from("sessions").insert({
-      id,
-      name: cleanName,
-      password: hash,
-      created_by: S.user.user_id,
-      ends_at: endsAt,
-    });
+      });
     if (error) throw error;
-
     const { data: section, error: sErr } = await S.sb
       .from("sections")
       .insert({ session_id: id, name: "Main", sort_order: 0 })
@@ -841,19 +704,17 @@
     await S.sb
       .from("whiteboards")
       .upsert({ session_id: id, data: "", updated_by: S.user.user_id });
-    return { id, name: cleanName, created_by: S.user.user_id, ends_at: endsAt };
+    return { id, name: clean, created_by: S.user.user_id, ends_at: endsAt };
   }
-
   async function joinSession(id, password) {
     id = String(id || "")
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, "")
       .slice(0, 6);
-    if (id.length !== 6) throw new Error("Session ID must be 6 characters");
+    if (id.length !== 6) throw new Error("Session ID must be 6 chars");
     if (!password || password.length < 3)
-      throw new Error("Enter the session password");
+      throw new Error("Enter session password");
     const hash = await sha256(password);
-
     if (S.demo) {
       const sess = Demo.sessions[id];
       if (!sess) throw new Error("Session not found");
@@ -865,11 +726,9 @@
         ends_at: sess.ends_at || null,
       };
     }
-
-    // Don't select password into client state beyond verification
     const { data, error } = await S.sb
       .from("sessions")
-      .select("id, name, password, created_by, ends_at")
+      .select("id,name,password,created_by,ends_at")
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
@@ -882,30 +741,28 @@
       ends_at: data.ends_at || null,
     };
   }
-
   async function deleteSession() {
     if (!S.session) return;
     const isOwner =
-      !S.session.created_by || S.session.created_by === S.user.user_id;
+      S.session.created_by && S.session.created_by === S.user.user_id;
     if (!isOwner) {
-      toast("Only the session creator can delete this session", "error");
+      toast("Only the session creator can delete", "error");
       return;
     }
-    if (
-      !confirm("Delete this session and all its data? This cannot be undone.")
-    )
-      return;
+    if (!confirm("Delete this session for everyone?")) return;
     const id = S.session.id;
     try {
-      setLoading(true, "Deleting session…");
+      setLoading(true, "Deleting…");
       if (S.demo) {
         delete Demo.sessions[id];
         Demo.persist();
+        // notify other tabs via storage tick already
       } else {
+        // Broadcast kill signal first so joiners leave immediately
+        broadcast("session", { type: "deleted", session_id: id });
         const { error } = await S.sb.from("sessions").delete().eq("id", id);
         if (error) throw error;
       }
-      // Remove from recent
       localStorage.setItem(
         LS.recent,
         JSON.stringify(getRecent().filter((r) => r.id !== id)),
@@ -913,38 +770,42 @@
       toast("Session deleted", "success");
       await leaveSession({ silent: true, skipSave: true });
       enterHub();
-    } catch (err) {
-      toast(err.message || "Failed to delete session", "error");
+    } catch (ex) {
+      toast(ex.message || "Delete failed", "error");
     } finally {
       setLoading(false);
     }
   }
-
+  async function forceLeaveDeleted() {
+    if (!S.session || S.leaving) return;
+    toast("Session was deleted by the creator", "error", 5000);
+    await leaveSession({ silent: true, skipSave: true });
+    enterHub();
+  }
   async function enterSession(session) {
     S.session = session;
     S.leaving = false;
-    setLoading(true, "Joining workspace…");
+    setLoading(true, "Joining…");
     try {
       await loadSessionData();
-      setupRealtime();
-      startSessionTimer();
-      renderDashboardShell();
+      await setupRealtime();
+      startTimer();
+      renderShell();
       pushRecent(session);
       showView("dashboard");
       switchPanel("editor");
       toast(`Joined ${session.name}`, "success");
-    } catch (err) {
-      console.error(err);
-      toast(err.message || "Failed to join session", "error");
+    } catch (ex) {
+      console.error(ex);
+      toast(ex.message || "Join failed", "error");
       await teardownRealtime();
-      stopSessionTimer();
+      stopTimer();
       clearSessionState();
       enterHub();
     } finally {
       setLoading(false);
     }
   }
-
   function clearSessionState() {
     S.session = null;
     S.sections = [];
@@ -953,55 +814,47 @@
     S.files = [];
     S.todos = [];
     S.messages = [];
+    S.msgById = new Map();
     S.boardData = "";
     S.unreadChat = 0;
-    S.knownMessageIds = new Set();
     S.presence = {};
     S.remoteTyping = null;
+    S.editorDirty = false;
+    S.lastTextHash = {};
+    S.lastBoardHash = "";
   }
-
   async function leaveSession({ silent = false, skipSave = false } = {}) {
     if (S.leaving) return;
     S.leaving = true;
     try {
-      // Cancel pending debounced save, then flush once
-      if (S.saveTimer) {
-        clearTimeout(S.saveTimer);
-        S.saveTimer = null;
-      }
-      if (S.boardSaveTimer) {
-        clearTimeout(S.boardSaveTimer);
-        S.boardSaveTimer = null;
-      }
-      if (S.typingClear) {
-        clearTimeout(S.typingClear);
-        S.typingClear = null;
-      }
-
-      stopSessionTimer();
-
+      clearTimeout(S.saveTimer);
+      S.saveTimer = null;
+      clearTimeout(S.boardTimer);
+      S.boardTimer = null;
+      clearTimeout(S.typingClear);
+      S.typingClear = null;
+      stopTimer();
       if (!skipSave && S.session && S.activeSectionId) {
-        const html = $("#editor")?.innerHTML || "";
         try {
-          await saveTextImmediate(S.activeSectionId, html);
-        } catch (err) {
-          console.warn("Final save failed", err);
+          await saveText(
+            S.activeSectionId,
+            $("#editor")?.innerHTML || "",
+            true,
+          );
+        } catch {
+          /* */
         }
         try {
           await persistBoard(true);
         } catch {
-          /* ignore */
+          /* */
         }
       }
-
       await teardownRealtime();
       clearSessionState();
-
-      // Clear dashboard DOM remnants
       const ed = $("#editor");
       if (ed) ed.innerHTML = "";
-      updateEditorEmptyClass();
-
+      updateEditorEmpty();
       if (!silent && S.user) {
         enterHub();
         toast("Left session", "info");
@@ -1010,23 +863,19 @@
       S.leaving = false;
     }
   }
-
-  function renderDashboardShell() {
+  function renderShell() {
     if (!S.session || !S.user) return;
     $("#session-id-label").textContent = S.session.id;
     $("#session-name-label").textContent = S.session.name;
     const av = $("#dash-avatar");
     av.textContent = initials(S.user.name);
     av.style.background = avatarColor(S.user.user_id);
-
-    const delBtn = $("#delete-session-btn");
-    if (delBtn) {
-      const isOwner =
-        !S.session.created_by || S.session.created_by === S.user.user_id;
-      delBtn.hidden = !isOwner;
-      delBtn.title = isOwner ? "Delete session" : "Only creator can delete";
+    const del = $("#delete-session-btn");
+    if (del) {
+      const owner =
+        S.session.created_by && S.session.created_by === S.user.user_id;
+      del.hidden = !owner;
     }
-
     renderSections();
     renderChat(true);
     renderTasks();
@@ -1036,20 +885,22 @@
     setConn(S.demo || S.connected ? "online" : "connecting");
   }
 
+  /* ---------- Load data ---------- */
   async function loadSessionData() {
     if (S.demo) {
-      const data = Demo.getSessionData(S.session.id);
-      if (!data) throw new Error("Session data missing");
+      Demo.reload();
+      const data = Demo.data(S.session.id);
+      if (!data) throw new Error("Session missing");
       S.sections = [...(data.sections || [])].sort(
         (a, b) => a.sort_order - b.sort_order,
       );
       S.texts = { ...(data.texts || {}) };
       S.messages = [...(data.messages || [])];
+      S.msgById = new Map(S.messages.map((m) => [m.id, m]));
       S.todos = [...(data.todos || [])];
       S.files = [...(data.files || [])];
       S.boardData = data.board || "";
-      S.knownMessageIds = new Set(S.messages.map((m) => m.id));
-
+      S.lastBoardHash = hashStr(S.boardData);
       if (!S.sections.length) {
         const secId = uuid();
         const sec = {
@@ -1072,44 +923,33 @@
         S.texts = { ...data.texts };
       }
       S.activeSectionId = S.sections[0].id;
-      loadEditorContent(S.activeSectionId);
+      loadEditor(S.activeSectionId);
       return;
     }
-
     const sid = S.session.id;
-    const [secRes, textRes, chatRes, todoRes, fileRes, boardRes] =
-      await Promise.all([
-        S.sb
-          .from("sections")
-          .select("*")
-          .eq("session_id", sid)
-          .order("sort_order"),
-        S.sb.from("texts").select("*").eq("session_id", sid),
-        S.sb
-          .from("chat_messages")
-          .select("*")
-          .eq("session_id", sid)
-          .order("created_at")
-          .limit(200),
-        S.sb
-          .from("todos")
-          .select("*")
-          .eq("session_id", sid)
-          .order("created_at"),
-        S.sb
-          .from("files")
-          .select("*")
-          .eq("session_id", sid)
-          .order("created_at", { ascending: false }),
-        S.sb
-          .from("whiteboards")
-          .select("*")
-          .eq("session_id", sid)
-          .maybeSingle(),
-      ]);
-
-    if (secRes.error) throw secRes.error;
-    S.sections = secRes.data || [];
+    const [secR, textR, chatR, todoR, fileR, boardR] = await Promise.all([
+      S.sb
+        .from("sections")
+        .select("*")
+        .eq("session_id", sid)
+        .order("sort_order"),
+      S.sb.from("texts").select("*").eq("session_id", sid),
+      S.sb
+        .from("chat_messages")
+        .select("*")
+        .eq("session_id", sid)
+        .order("created_at")
+        .limit(200),
+      S.sb.from("todos").select("*").eq("session_id", sid).order("created_at"),
+      S.sb
+        .from("files")
+        .select("*")
+        .eq("session_id", sid)
+        .order("created_at", { ascending: false }),
+      S.sb.from("whiteboards").select("*").eq("session_id", sid).maybeSingle(),
+    ]);
+    if (secR.error) throw secR.error;
+    S.sections = secR.data || [];
     if (!S.sections.length) {
       const { data: section, error } = await S.sb
         .from("sections")
@@ -1122,143 +962,101 @@
         .insert({ section_id: section.id, session_id: sid, content: "" });
       S.sections = [section];
     }
-
     S.texts = {};
-    (textRes.data || []).forEach((t) => {
-      // Prefer newest if duplicates ever exist
+    (textR.data || []).forEach((t) => {
       const prev = S.texts[t.section_id];
-      if (!prev || new Date(t.updated_at) > new Date(prev.updated_at || 0)) {
+      if (
+        !prev ||
+        new Date(t.updated_at || 0) >= new Date(prev.updated_at || 0)
+      )
         S.texts[t.section_id] = t;
-      }
     });
-    S.messages = chatRes.data || [];
-    S.knownMessageIds = new Set(S.messages.map((m) => m.id));
-    S.todos = todoRes.data || [];
-    S.files = fileRes.data || [];
-    S.boardData = boardRes.data?.data || "";
-    if (!boardRes.data) {
+    S.messages = chatR.data || [];
+    S.msgById = new Map(S.messages.map((m) => [m.id, m]));
+    S.todos = todoR.data || [];
+    S.files = fileR.data || [];
+    S.boardData = boardR.data?.data || "";
+    S.lastBoardHash = hashStr(S.boardData);
+    if (!boardR.data)
       await S.sb
         .from("whiteboards")
         .upsert({ session_id: sid, data: "", updated_by: S.user.user_id });
-    }
     S.activeSectionId = S.sections[0].id;
-    loadEditorContent(S.activeSectionId);
+    loadEditor(S.activeSectionId);
   }
 
-  // -------------------- Realtime --------------------
+  /* ---------- Realtime core ---------- */
   async function teardownRealtime() {
     if (S.demoPoll) {
       clearInterval(S.demoPoll);
       S.demoPoll = null;
     }
+    if (S.fallbackPoll) {
+      clearInterval(S.fallbackPoll);
+      S.fallbackPoll = null;
+    }
     if (S.channel && S.sb) {
       try {
         await S.sb.removeChannel(S.channel);
       } catch {
-        /* ignore */
+        /* */
       }
     }
     S.channel = null;
+    S.channelName = null;
   }
 
-  function setupRealtime() {
-    // fire-and-forget cleanup of previous
-    teardownRealtime();
+  function broadcast(event, payload) {
+    if (S.demo || !S.channel || typeof S.channel.send !== "function" || !S.user)
+      return;
+    try {
+      S.channel.send({
+        type: "broadcast",
+        event,
+        payload: {
+          ...payload,
+          user_id: S.user.user_id,
+          user_name: S.user.name,
+          client_id: S.clientId,
+          ts: Date.now(),
+        },
+      });
+    } catch (e) {
+      console.warn("broadcast", e);
+    }
+  }
 
-    if (S.demo || !S.sb) {
-      let lastFp = Demo.fingerprint(S.session.id);
+  async function setupRealtime() {
+    await teardownRealtime();
+    if (!S.session) return;
+
+    if (S.demo) {
+      let tick = localStorage.getItem(LS.sessions + "_tick") || "";
       S.demoPoll = setInterval(() => {
         if (!S.session || S.leaving) return;
-        try {
-          // Reload sessions from storage for multi-tab
-          Demo.sessions = safeParse(
-            localStorage.getItem(LS.sessions),
-            Demo.sessions,
-          );
-          const fp = Demo.fingerprint(S.session.id);
-          if (fp === lastFp) return;
-          lastFp = fp;
-          const data = Demo.getSessionData(S.session.id);
-          if (!data) return;
-
-          // messages
-          const prevCount = S.messages.length;
-          const newMsgs = data.messages || [];
-          const added = newMsgs.filter((m) => !S.knownMessageIds.has(m.id));
-          S.messages = [...newMsgs];
-          S.knownMessageIds = new Set(S.messages.map((m) => m.id));
-          if (added.length) {
-            if (S.activePanel !== "chat") {
-              S.unreadChat += added.filter(
-                (m) => m.user_id !== S.user.user_id,
-              ).length;
-              updateChatBadge();
-            }
-            renderChat(true);
-          } else if (newMsgs.length !== prevCount) {
-            renderChat(true);
-          }
-
-          S.todos = [...(data.todos || [])];
-          renderTasks();
-          S.files = [...(data.files || [])];
-          renderFiles();
-
-          // sections
-          const secs = [...(data.sections || [])].sort(
-            (a, b) => a.sort_order - b.sort_order,
-          );
-          S.sections = secs;
-          if (!S.sections.find((s) => s.id === S.activeSectionId)) {
-            if (S.sections[0]) {
-              S.activeSectionId = S.sections[0].id;
-              loadEditorContent(S.activeSectionId);
-            }
-          }
-          renderSections();
-
-          // texts remote
-          S.texts = { ...(data.texts || {}) };
-          const row = S.texts[S.activeSectionId];
-          const ed = $("#editor");
-          if (
-            row &&
-            ed &&
-            document.activeElement !== ed &&
-            !S.applyingRemoteEditor
-          ) {
-            const remote = sanitizeHtml(row.content || "");
-            if (ed.innerHTML !== remote) {
-              S.applyingRemoteEditor = true;
-              ed.innerHTML = remote;
-              updateEditorEmptyClass();
-              S.applyingRemoteEditor = false;
-              setSaveStatus("conflict");
-              setTimeout(() => setSaveStatus("saved"), 1200);
-            }
-          }
-
-          // board
-          if ((data.board || "") !== S.boardData) {
-            S.boardData = data.board || "";
-            if (S.activePanel === "whiteboard") restoreBoard(S.boardData);
-          }
-        } catch (err) {
-          console.warn("demo poll", err);
+        const t = localStorage.getItem(LS.sessions + "_tick") || "";
+        Demo.reload();
+        if (!Demo.sessions[S.session.id]) {
+          forceLeaveDeleted();
+          return;
         }
-      }, 900);
+        if (t === tick) return;
+        tick = t;
+        pullDemoState();
+      }, 700);
+      // storage event for other tabs
+      window.addEventListener("storage", onStorage);
       setConn("online");
       return;
     }
 
     const sid = S.session.id;
-    const ch = S.sb.channel(`session:${sid}`, {
-      config: {
-        broadcast: { self: false },
-        presence: { key: S.user.user_id },
-      },
+    S.channelName = `ss:${sid}`;
+    const ch = S.sb.channel(S.channelName, {
+      config: { broadcast: { self: false }, presence: { key: S.user.user_id } },
     });
 
+    // ---- Chat INSERT (dedupe by id) ----
     ch.on(
       "postgres_changes",
       {
@@ -1267,19 +1065,12 @@
         table: "chat_messages",
         filter: `session_id=eq.${sid}`,
       },
-      (payload) => {
-        const row = payload.new;
-        if (!row?.id || S.knownMessageIds.has(row.id)) return;
-        S.knownMessageIds.add(row.id);
-        S.messages.push(row);
-        if (S.activePanel !== "chat" && row.user_id !== S.user.user_id) {
-          S.unreadChat += 1;
-          updateChatBadge();
-        }
-        renderChat(true);
+      (p) => {
+        upsertMessage(p.new, { fromRemote: true });
       },
     );
 
+    // ---- Todos ----
     ch.on(
       "postgres_changes",
       {
@@ -1288,21 +1079,21 @@
         table: "todos",
         filter: `session_id=eq.${sid}`,
       },
-      (payload) => {
-        if (payload.eventType === "INSERT") {
-          if (!S.todos.find((t) => t.id === payload.new.id))
-            S.todos.push(payload.new);
-        } else if (payload.eventType === "UPDATE") {
-          const i = S.todos.findIndex((t) => t.id === payload.new.id);
-          if (i >= 0) S.todos[i] = payload.new;
-          else S.todos.push(payload.new);
-        } else if (payload.eventType === "DELETE") {
-          S.todos = S.todos.filter((t) => t.id !== payload.old.id);
+      (p) => {
+        if (p.eventType === "INSERT") {
+          if (!S.todos.find((t) => t.id === p.new.id)) S.todos.push(p.new);
+        } else if (p.eventType === "UPDATE") {
+          const i = S.todos.findIndex((t) => t.id === p.new.id);
+          if (i >= 0) S.todos[i] = p.new;
+          else S.todos.push(p.new);
+        } else if (p.eventType === "DELETE") {
+          S.todos = S.todos.filter((t) => t.id !== p.old.id);
         }
         renderTasks();
       },
     );
 
+    // ---- Files ----
     ch.on(
       "postgres_changes",
       {
@@ -1311,17 +1102,17 @@
         table: "files",
         filter: `session_id=eq.${sid}`,
       },
-      (payload) => {
-        if (payload.eventType === "INSERT") {
-          if (!S.files.find((f) => f.id === payload.new.id))
-            S.files.unshift(payload.new);
-        } else if (payload.eventType === "DELETE") {
-          S.files = S.files.filter((f) => f.id !== payload.old.id);
+      (p) => {
+        if (p.eventType === "INSERT") {
+          if (!S.files.find((f) => f.id === p.new.id)) S.files.unshift(p.new);
+        } else if (p.eventType === "DELETE") {
+          S.files = S.files.filter((f) => f.id !== p.old.id);
         }
         renderFiles();
       },
     );
 
+    // ---- Sections ----
     ch.on(
       "postgres_changes",
       {
@@ -1330,65 +1121,48 @@
         table: "sections",
         filter: `session_id=eq.${sid}`,
       },
-      (payload) => {
-        if (payload.eventType === "INSERT") {
-          if (!S.sections.find((s) => s.id === payload.new.id))
-            S.sections.push(payload.new);
-        } else if (payload.eventType === "UPDATE") {
-          const i = S.sections.findIndex((s) => s.id === payload.new.id);
-          if (i >= 0) S.sections[i] = payload.new;
-        } else if (payload.eventType === "DELETE") {
-          S.sections = S.sections.filter((s) => s.id !== payload.old.id);
-          if (S.activeSectionId === payload.old.id) {
-            if (S.sections[0]) {
-              S.activeSectionId = S.sections[0].id;
-              loadEditorContent(S.activeSectionId);
-            } else {
-              S.activeSectionId = null;
-              const ed = $("#editor");
-              if (ed) ed.innerHTML = "";
-            }
+      (p) => {
+        if (
+          p.eventType === "INSERT" &&
+          !S.sections.find((s) => s.id === p.new.id)
+        )
+          S.sections.push(p.new);
+        else if (p.eventType === "UPDATE") {
+          const i = S.sections.findIndex((s) => s.id === p.new.id);
+          if (i >= 0) S.sections[i] = p.new;
+        } else if (p.eventType === "DELETE") {
+          S.sections = S.sections.filter((s) => s.id !== p.old.id);
+          if (S.activeSectionId === p.old.id && S.sections[0]) {
+            S.activeSectionId = S.sections[0].id;
+            loadEditor(S.activeSectionId);
           }
         }
-        S.sections.sort((a, b) => a.sort_order - b.sort_order);
+        S.sections.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
         renderSections();
       },
     );
 
+    // ---- Texts UPDATE (editor content) ----
     ch.on(
       "postgres_changes",
       {
-        event: "UPDATE",
+        event: "*",
         schema: "public",
         table: "texts",
         filter: `session_id=eq.${sid}`,
       },
-      (payload) => {
-        const row = payload.new;
-        if (row.updated_by && row.updated_by === S.user.user_id) {
+      (p) => {
+        const row = p.new;
+        if (!row) return;
+        if (row.updated_by === S.user.user_id) {
           S.texts[row.section_id] = row;
           return;
         }
-        S.texts[row.section_id] = row;
-        if (row.section_id === S.activeSectionId) {
-          const ed = $("#editor");
-          if (!ed) return;
-          const remote = sanitizeHtml(row.content || "");
-          if (document.activeElement !== ed) {
-            S.applyingRemoteEditor = true;
-            ed.innerHTML = remote;
-            updateEditorEmptyClass();
-            S.applyingRemoteEditor = false;
-            setSaveStatus("conflict");
-            setTimeout(() => setSaveStatus("saved"), 1200);
-          } else if (ed.innerHTML !== remote) {
-            // Soft notice while typing — don't clobber caret
-            setSaveStatus("conflict");
-          }
-        }
+        applyRemoteText(row);
       },
     );
 
+    // ---- Whiteboard snapshot ----
     ch.on(
       "postgres_changes",
       {
@@ -1397,14 +1171,86 @@
         table: "whiteboards",
         filter: `session_id=eq.${sid}`,
       },
-      (payload) => {
-        const row = payload.new;
+      (p) => {
+        const row = p.new;
         if (!row || row.updated_by === S.user.user_id) return;
-        if ((row.data || "") === S.boardData) return;
-        S.boardData = row.data || "";
-        if (S.activePanel === "whiteboard") restoreBoard(S.boardData);
+        const data = row.data || "";
+        if (hashStr(data) === S.lastBoardHash) return;
+        S.boardData = data;
+        S.lastBoardHash = hashStr(data);
+        if (S.activePanel === "whiteboard") restoreBoard(data);
       },
     );
+
+    // ---- Session deleted ----
+    ch.on(
+      "postgres_changes",
+      {
+        event: "DELETE",
+        schema: "public",
+        table: "sessions",
+        filter: `id=eq.${sid}`,
+      },
+      () => {
+        forceLeaveDeleted();
+      },
+    );
+
+    // ---- Broadcasts (fast path for editor/board/chat/session) ----
+    ch.on("broadcast", { event: "editor" }, ({ payload }) => {
+      if (
+        !payload ||
+        payload.client_id === S.clientId ||
+        payload.user_id === S.user.user_id
+      )
+        return;
+      applyRemoteText(
+        {
+          section_id: payload.section_id,
+          content: payload.content,
+          updated_at: new Date(payload.ts || Date.now()).toISOString(),
+          updated_by: payload.user_id,
+        },
+        true,
+      );
+    });
+
+    ch.on("broadcast", { event: "whiteboard" }, ({ payload }) => {
+      if (!payload || payload.client_id === S.clientId) return;
+      if (payload.type === "clear") {
+        clearCanvasLocal();
+        S.boardData = "";
+        S.lastBoardHash = hashStr("");
+        return;
+      }
+      if (payload.type === "stroke" && payload.from && payload.to) {
+        drawLine(
+          payload.from,
+          payload.to,
+          payload.color,
+          payload.size,
+          payload.erase,
+        );
+      }
+      if (payload.type === "snapshot" && typeof payload.data === "string") {
+        if (hashStr(payload.data) !== S.lastBoardHash) {
+          S.boardData = payload.data;
+          S.lastBoardHash = hashStr(payload.data);
+          if (S.activePanel === "whiteboard") restoreBoard(payload.data);
+        }
+      }
+    });
+
+    ch.on("broadcast", { event: "chat" }, ({ payload }) => {
+      if (!payload?.message) return;
+      if (payload.client_id === S.clientId) return;
+      upsertMessage(payload.message, { fromRemote: true });
+    });
+
+    ch.on("broadcast", { event: "session" }, ({ payload }) => {
+      if (payload?.type === "deleted" && payload.session_id === sid)
+        forceLeaveDeleted();
+    });
 
     ch.on("broadcast", { event: "typing" }, ({ payload }) => {
       if (!payload || payload.user_id === S.user.user_id) return;
@@ -1417,19 +1263,8 @@
       }, 2000);
     });
 
-    ch.on("broadcast", { event: "whiteboard" }, ({ payload }) => {
-      if (!payload || payload.user_id === S.user.user_id) return;
-      if (payload.type === "clear") {
-        clearCanvasLocal();
-        S.boardData = "";
-        return;
-      }
-      applyRemoteStroke(payload);
-    });
-
     ch.on("presence", { event: "sync" }, () => {
-      const state = ch.presenceState();
-      S.presence = state || {};
+      S.presence = ch.presenceState() || {};
       renderPresence();
     });
 
@@ -1443,7 +1278,7 @@
             online_at: new Date().toISOString(),
           });
         } catch {
-          /* presence optional */
+          /* */
         }
       } else if (
         status === "CHANNEL_ERROR" ||
@@ -1451,122 +1286,218 @@
         status === "CLOSED"
       ) {
         setConn("offline");
-        // light reconnect
         setTimeout(() => {
           if (S.session && !S.leaving && S.channel === ch) setupRealtime();
-        }, 2500);
-      } else {
-        setConn("connecting");
-      }
+        }, 2000);
+      } else setConn("connecting");
     });
 
     S.channel = ch;
+
+    // Fallback poll every 4s: session alive + text/board catch-up
+    S.fallbackPoll = setInterval(() => {
+      if (S.session && !S.leaving) fallbackSync();
+    }, 4000);
   }
 
-  function broadcast(event, payload) {
-    if (S.demo || !S.channel || typeof S.channel.send !== "function" || !S.user)
-      return;
-    S.channel.send({
-      type: "broadcast",
-      event,
-      payload: { ...payload, user_id: S.user.user_id, user_name: S.user.name },
+  function onStorage(e) {
+    if (!S.session || S.leaving) return;
+    if (e.key === LS.sessions || e.key === LS.sessions + "_tick") {
+      Demo.reload();
+      if (!Demo.sessions[S.session.id]) forceLeaveDeleted();
+      else pullDemoState();
+    }
+  }
+
+  function pullDemoState() {
+    const data = Demo.data(S.session.id);
+    if (!data) return;
+    // messages
+    let chatChanged = false;
+    (data.messages || []).forEach((m) => {
+      if (!S.msgById.has(m.id)) {
+        upsertMessage(m, { fromRemote: true, silent: true });
+        chatChanged = true;
+      }
     });
-  }
-
-  function throttleTyping(where) {
-    const now = Date.now();
-    if (now - S.typingThrottle < 600) return;
-    S.typingThrottle = now;
-    broadcast("typing", { where });
-  }
-
-  function updateTypingUI() {
-    const ed = $("#typing-indicator");
-    const chat = $("#chat-typing");
-    if (!ed || !chat) return;
-    if (S.remoteTyping?.where === "editor") {
-      ed.hidden = false;
-      ed.textContent = `${S.remoteTyping.user_name} is typing…`;
-    } else {
-      ed.hidden = true;
+    if (chatChanged) renderChat(true);
+    S.todos = [...(data.todos || [])];
+    renderTasks();
+    S.files = [...(data.files || [])];
+    renderFiles();
+    S.sections = [...(data.sections || [])].sort(
+      (a, b) => a.sort_order - b.sort_order,
+    );
+    renderSections();
+    // texts
+    Object.values(data.texts || {}).forEach((row) => {
+      if (row.updated_by === S.user.user_id) {
+        S.texts[row.section_id] = row;
+        return;
+      }
+      applyRemoteText(row);
+    });
+    // board
+    const b = data.board || "";
+    if (hashStr(b) !== S.lastBoardHash) {
+      S.boardData = b;
+      S.lastBoardHash = hashStr(b);
+      if (S.activePanel === "whiteboard") restoreBoard(b);
     }
-    if (S.remoteTyping?.where === "chat") {
-      chat.hidden = false;
-      chat.textContent = `${S.remoteTyping.user_name} is typing…`;
-    } else {
-      chat.hidden = true;
-    }
   }
 
-  function renderPresence() {
-    const el = $("#online-users");
-    if (!el) return;
-    el.innerHTML = "";
-    const people = [];
-    Object.values(S.presence || {}).forEach((arr) => {
-      (arr || []).forEach((p) => {
-        if (p?.user_id && !people.find((x) => x.user_id === p.user_id))
-          people.push(p);
+  async function fallbackSync() {
+    if (S.demo || !S.sb || !S.session) return;
+    try {
+      const { data: sess, error } = await S.sb
+        .from("sessions")
+        .select("id")
+        .eq("id", S.session.id)
+        .maybeSingle();
+      if (error) return;
+      if (!sess) {
+        await forceLeaveDeleted();
+        return;
+      }
+      // texts
+      const { data: texts } = await S.sb
+        .from("texts")
+        .select("*")
+        .eq("session_id", S.session.id);
+      (texts || []).forEach((row) => {
+        if (row.updated_by === S.user.user_id) {
+          S.texts[row.section_id] = row;
+          return;
+        }
+        const prev = S.texts[row.section_id];
+        if (
+          !prev ||
+          new Date(row.updated_at || 0) > new Date(prev.updated_at || 0)
+        )
+          applyRemoteText(row);
       });
-    });
-    // Always include self in demo
-    if (S.demo && S.user) {
-      people.length = 0;
-      people.push({ user_id: S.user.user_id, name: S.user.name });
+      // board
+      const { data: board } = await S.sb
+        .from("whiteboards")
+        .select("*")
+        .eq("session_id", S.session.id)
+        .maybeSingle();
+      if (board && board.updated_by !== S.user.user_id) {
+        const d = board.data || "";
+        if (hashStr(d) !== S.lastBoardHash) {
+          S.boardData = d;
+          S.lastBoardHash = hashStr(d);
+          if (S.activePanel === "whiteboard") restoreBoard(d);
+        }
+      }
+      // chat catch-up
+      const { data: chats } = await S.sb
+        .from("chat_messages")
+        .select("*")
+        .eq("session_id", S.session.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      let added = false;
+      (chats || []).reverse().forEach((m) => {
+        if (!S.msgById.has(m.id)) {
+          upsertMessage(m, { fromRemote: true, silent: true });
+          added = true;
+        }
+      });
+      if (added) renderChat(true);
+    } catch (e) {
+      console.warn("fallbackSync", e);
     }
-    people.slice(0, 8).forEach((p) => {
-      const chip = document.createElement("span");
-      chip.className = "ou-chip";
-      chip.style.background = avatarColor(p.user_id || p.name);
-      chip.textContent = initials(p.name || p.user_id || "?");
-      chip.title = p.name || p.user_id;
-      el.appendChild(chip);
-    });
   }
 
-  // -------------------- Timer (shared ends_at) --------------------
-  function startSessionTimer() {
-    stopSessionTimer();
+  /* ---------- Editor remote apply ---------- */
+  function applyRemoteText(row, fromBroadcast = false) {
+    if (!row?.section_id) return;
+    const content = sanitizeHtml(row.content || "");
+    const h = hashStr(content);
+    if (
+      S.lastTextHash[row.section_id] === h &&
+      S.texts[row.section_id]?.content === content
+    ) {
+      S.texts[row.section_id] = { ...S.texts[row.section_id], ...row, content };
+      return;
+    }
+    S.texts[row.section_id] = { ...S.texts[row.section_id], ...row, content };
+    S.lastTextHash[row.section_id] = h;
+
+    if (row.section_id !== S.activeSectionId) return;
+
+    const ed = $("#editor");
+    if (!ed) return;
+    // If user is actively typing (dirty within 800ms), don't clobber — mark live
+    const typingNow = S.editorDirty && Date.now() - S.lastLocalEditAt < 800;
+    if (typingNow && document.activeElement === ed) {
+      setSaveStatus("live");
+      return;
+    }
+    if (ed.innerHTML === content) return;
+    S.applyingEditor = true;
+    ed.innerHTML = content;
+    S.applyingEditor = false;
+    S.editorDirty = false;
+    updateEditorEmpty();
+    setSaveStatus("live");
+    setTimeout(() => setSaveStatus("saved"), 1000);
+  }
+
+  /* ---------- Chat upsert (NO DUPLICATES) ---------- */
+  function upsertMessage(msg, { fromRemote = false, silent = false } = {}) {
+    if (!msg || !msg.id) return;
+    if (S.msgById.has(msg.id)) return; // already have it
+    S.msgById.set(msg.id, msg);
+    S.messages.push(msg);
+    S.messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (
+      fromRemote &&
+      S.activePanel !== "chat" &&
+      msg.user_id !== S.user?.user_id
+    ) {
+      S.unreadChat += 1;
+      updateChatBadge();
+    }
+    if (!silent) renderChat(true);
+  }
+
+  /* ---------- Timer ---------- */
+  function startTimer() {
+    stopTimer();
     let ends = S.session?.ends_at ? new Date(S.session.ends_at).getTime() : NaN;
     if (!Number.isFinite(ends)) {
       ends = Date.now() + SESSION_MS;
       S.session.ends_at = new Date(ends).toISOString();
-      if (S.demo) {
-        const sess = Demo.sessions[S.session.id];
-        if (sess) {
-          sess.ends_at = S.session.ends_at;
-          Demo.persist();
-        }
+      if (S.demo && Demo.sessions[S.session.id]) {
+        Demo.sessions[S.session.id].ends_at = S.session.ends_at;
+        Demo.persist();
       }
     }
     S.timerEndsAt = ends;
     const el = $("#session-timer");
-    let endedToast = false;
+    let toasted = false;
     const tick = () => {
       if (!el) return;
       const left = Math.max(0, S.timerEndsAt - Date.now());
       const m = Math.floor(left / 60000);
       const s = Math.floor((left % 60000) / 1000);
       el.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-      if (left <= 0 && !endedToast) {
-        endedToast = true;
-        toast(
-          "Session timer ended — you can stay or leave anytime",
-          "info",
-          5000,
-        );
+      if (left <= 0 && !toasted) {
+        toasted = true;
+        toast("Session timer ended", "info", 4000);
       }
     };
     tick();
     S.timerInterval = setInterval(tick, 1000);
   }
-
-  function stopSessionTimer() {
+  function stopTimer() {
     if (S.timerInterval) clearInterval(S.timerInterval);
     S.timerInterval = null;
   }
 
-  // -------------------- Sections + Editor --------------------
+  /* ---------- Sections + Editor ---------- */
   function renderSections() {
     const list = $("#section-list");
     if (!list) return;
@@ -1574,77 +1505,72 @@
     S.sections.forEach((sec) => {
       const li = document.createElement("li");
       li.className = `section-item${sec.id === S.activeSectionId ? " active" : ""}`;
-      li.dataset.id = sec.id;
-      li.innerHTML = `
-        <span class="sec-name"></span>
-        <button class="sec-del" title="Delete section" type="button" aria-label="Delete section"><i class="fa-solid fa-xmark"></i></button>
-      `;
+      li.innerHTML = `<span class="sec-name"></span><button class="sec-del" type="button" title="Delete"><i class="fa-solid fa-xmark"></i></button>`;
       li.querySelector(".sec-name").textContent = sec.name;
-      li.querySelector(".sec-name").title = "Double-click to rename";
-      li.addEventListener("click", (e) => {
-        if (e.target.closest(".sec-del")) return;
-        selectSection(sec.id);
-      });
-      li.addEventListener("dblclick", (e) => {
-        if (e.target.closest(".sec-del")) return;
-        renameSection(sec.id);
-      });
-      li.querySelector(".sec-del").addEventListener("click", (e) => {
+      li.onclick = (e) => {
+        if (!e.target.closest(".sec-del")) selectSection(sec.id);
+      };
+      li.ondblclick = (e) => {
+        if (!e.target.closest(".sec-del")) renameSection(sec.id);
+      };
+      li.querySelector(".sec-del").onclick = (e) => {
         e.stopPropagation();
         deleteSection(sec.id);
-      });
+      };
       list.appendChild(li);
     });
     const active = S.sections.find((s) => s.id === S.activeSectionId);
-    const nameEl = $("#editor-section-name");
-    if (nameEl) nameEl.textContent = active?.name || "Untitled";
+    const n = $("#editor-section-name");
+    if (n) n.textContent = active?.name || "Untitled";
   }
-
   async function selectSection(id) {
     if (!id || id === S.activeSectionId) return;
-    if (S.activeSectionId) {
-      await saveTextImmediate(S.activeSectionId, $("#editor")?.innerHTML || "");
-    }
+    if (S.activeSectionId)
+      await saveText(S.activeSectionId, $("#editor")?.innerHTML || "", true);
     S.activeSectionId = id;
-    loadEditorContent(id);
+    loadEditor(id);
     renderSections();
   }
-
-  function loadEditorContent(sectionId) {
+  function loadEditor(sectionId) {
     const row = S.texts[sectionId];
     const ed = $("#editor");
     if (!ed) return;
-    S.applyingRemoteEditor = true;
+    S.applyingEditor = true;
     ed.innerHTML = sanitizeHtml(row?.content || "");
-    S.applyingRemoteEditor = false;
-    updateEditorEmptyClass();
+    S.applyingEditor = false;
+    S.editorDirty = false;
+    S.lastTextHash[sectionId] = hashStr(ed.innerHTML);
+    updateEditorEmpty();
     setSaveStatus("saved");
   }
-
   function scheduleSave() {
-    if (S.applyingRemoteEditor || S.leaving || !S.session) return;
+    if (S.applyingEditor || S.leaving || !S.session) return;
+    S.editorDirty = true;
+    S.lastLocalEditAt = Date.now();
     setSaveStatus("saving");
-    updateEditorEmptyClass();
+    updateEditorEmpty();
     clearTimeout(S.saveTimer);
-    const gen = ++S.saveGeneration;
     S.saveTimer = setTimeout(() => {
       S.saveTimer = null;
-      if (gen !== S.saveGeneration) return;
       if (!S.session || !S.activeSectionId || S.leaving) return;
-      saveTextImmediate(S.activeSectionId, $("#editor")?.innerHTML || "");
-    }, SAVE_DEBOUNCE);
+      saveText(S.activeSectionId, $("#editor")?.innerHTML || "", false);
+    }, SAVE_MS);
+    // live broadcast for joiners (even before DB save finishes)
     throttleTyping("editor");
+    broadcast("editor", {
+      section_id: S.activeSectionId,
+      content: sanitizeHtml($("#editor")?.innerHTML || ""),
+    });
   }
-
-  async function saveTextImmediate(sectionId, content) {
+  async function saveText(sectionId, content, immediate) {
     if (!S.session || !sectionId || S.leaving) return;
     const sessionId = S.session.id;
     const clean = sanitizeHtml(content);
     const now = new Date().toISOString();
-
+    S.lastTextHash[sectionId] = hashStr(clean);
     try {
       if (S.demo) {
-        const data = Demo.getSessionData(sessionId);
+        const data = Demo.data(sessionId);
         if (!data) return;
         if (!data.texts[sectionId]) {
           data.texts[sectionId] = {
@@ -1668,14 +1594,15 @@
         }
         data.texts[sectionId].content = clean;
         data.texts[sectionId].updated_at = now;
-        data.texts[sectionId].updated_by = S.user?.user_id;
+        data.texts[sectionId].updated_by = S.user.user_id;
         S.texts[sectionId] = data.texts[sectionId];
         Demo.persist();
+        S.editorDirty = false;
         if (S.session?.id === sessionId) setSaveStatus("saved");
         return;
       }
-
       const existing = S.texts[sectionId];
+      let saved;
       if (existing?.id) {
         if (existing.content && existing.content !== clean) {
           await S.sb
@@ -1693,7 +1620,7 @@
           .select()
           .single();
         if (error) throw error;
-        if (S.session?.id === sessionId) S.texts[sectionId] = data;
+        saved = data;
       } else {
         const { data, error } = await S.sb
           .from("texts")
@@ -1710,15 +1637,20 @@
           .select()
           .single();
         if (error) throw error;
-        if (S.session?.id === sessionId) S.texts[sectionId] = data;
+        saved = data;
       }
-      if (S.session?.id === sessionId) setSaveStatus("saved");
-    } catch (err) {
-      console.error(err);
+      if (S.session?.id === sessionId) {
+        S.texts[sectionId] = saved;
+        S.editorDirty = false;
+        setSaveStatus("saved");
+        // ensure peers get it even if postgres_changes lag
+        broadcast("editor", { section_id: sectionId, content: clean });
+      }
+    } catch (e) {
+      console.error(e);
       if (S.session?.id === sessionId) setSaveStatus("error");
     }
   }
-
   async function addSection() {
     const name = prompt("Section name:", "Untitled");
     if (name === null) return;
@@ -1726,7 +1658,6 @@
     const sort_order = S.sections.length
       ? Math.max(...S.sections.map((s) => s.sort_order || 0)) + 1
       : 0;
-
     try {
       if (S.demo) {
         const sec = {
@@ -1736,7 +1667,7 @@
           sort_order,
           created_at: new Date().toISOString(),
         };
-        const data = Demo.getSessionData(S.session.id);
+        const data = Demo.data(S.session.id);
         data.sections.push(sec);
         data.texts[sec.id] = {
           id: uuid(),
@@ -1752,7 +1683,6 @@
         toast("Section added", "success");
         return;
       }
-
       const { data: sec, error } = await S.sb
         .from("sections")
         .insert({ session_id: S.session.id, name: clean, sort_order })
@@ -1766,11 +1696,10 @@
       S.texts[sec.id] = { section_id: sec.id, content: "" };
       await selectSection(sec.id);
       toast("Section added", "success");
-    } catch (err) {
-      toast(err.message || "Could not add section", "error");
+    } catch (e) {
+      toast(e.message || "Add failed", "error");
     }
   }
-
   async function renameSection(id) {
     const sec = S.sections.find((s) => s.id === id);
     if (!sec) return;
@@ -1779,8 +1708,7 @@
     const clean = name.trim().slice(0, 48) || sec.name;
     try {
       if (S.demo) {
-        const data = Demo.getSessionData(S.session.id);
-        const row = data.sections.find((s) => s.id === id);
+        const row = Demo.data(S.session.id).sections.find((s) => s.id === id);
         if (row) row.name = clean;
         Demo.persist();
         sec.name = clean;
@@ -1793,24 +1721,22 @@
         sec.name = clean;
       }
       renderSections();
-      toast("Section renamed", "success");
-    } catch (err) {
-      toast(err.message || "Rename failed", "error");
+      toast("Renamed", "success");
+    } catch (e) {
+      toast(e.message || "Rename failed", "error");
     }
   }
-
   async function deleteSection(id) {
     if (S.sections.length <= 1) {
       toast("Keep at least one section", "error");
       return;
     }
-    if (!confirm("Delete this section and its content?")) return;
+    if (!confirm("Delete section?")) return;
     try {
       if (S.demo) {
-        const data = Demo.getSessionData(S.session.id);
+        const data = Demo.data(S.session.id);
         data.sections = data.sections.filter((s) => s.id !== id);
         delete data.texts[id];
-        delete data.versions[id];
         Demo.persist();
       } else {
         const { error } = await S.sb.from("sections").delete().eq("id", id);
@@ -1820,27 +1746,24 @@
       delete S.texts[id];
       if (S.activeSectionId === id) {
         S.activeSectionId = S.sections[0]?.id || null;
-        if (S.activeSectionId) loadEditorContent(S.activeSectionId);
+        if (S.activeSectionId) loadEditor(S.activeSectionId);
       }
       renderSections();
-      toast("Section deleted", "success");
-    } catch (err) {
-      toast(err.message || "Delete failed", "error");
+      toast("Deleted", "success");
+    } catch (e) {
+      toast(e.message || "Delete failed", "error");
     }
   }
-
   async function openHistory() {
     const sectionId = S.activeSectionId;
     if (!sectionId) return;
     const list = $("#history-list");
     list.innerHTML = '<li class="history-item">Loading…</li>';
     $("#history-modal").hidden = false;
-
     let versions = [];
     try {
-      if (S.demo) {
-        versions = Demo.getSessionData(S.session.id)?.versions[sectionId] || [];
-      } else {
+      if (S.demo) versions = Demo.data(S.session.id)?.versions[sectionId] || [];
+      else {
         const { data, error } = await S.sb
           .from("text_versions")
           .select("*")
@@ -1850,40 +1773,37 @@
         if (error) throw error;
         versions = data || [];
       }
-    } catch (err) {
-      list.innerHTML = `<li class="history-item">${escapeHtml(err.message || "Failed to load")}</li>`;
+    } catch (e) {
+      list.innerHTML = `<li class="history-item">${escapeHtml(e.message || "Failed")}</li>`;
       return;
     }
-
     if (!versions.length) {
-      list.innerHTML =
-        '<li class="history-item">No versions yet. Keep editing to create history.</li>';
+      list.innerHTML = '<li class="history-item">No versions yet</li>';
       return;
     }
-
     list.innerHTML = "";
     versions.forEach((v) => {
       const li = document.createElement("li");
       li.className = "history-item";
-      const when = new Date(v.created_at).toLocaleString();
       li.innerHTML = `<span></span><button class="btn btn-ghost btn-sm" type="button">Restore</button>`;
-      li.querySelector("span").textContent = when;
-      li.querySelector("button").addEventListener("click", async () => {
+      li.querySelector("span").textContent = new Date(
+        v.created_at,
+      ).toLocaleString();
+      li.querySelector("button").onclick = async () => {
         if (S.activeSectionId !== sectionId) await selectSection(sectionId);
-        const ed = $("#editor");
-        S.applyingRemoteEditor = true;
-        ed.innerHTML = sanitizeHtml(v.content || "");
-        S.applyingRemoteEditor = false;
-        updateEditorEmptyClass();
-        await saveTextImmediate(sectionId, ed.innerHTML);
+        S.applyingEditor = true;
+        $("#editor").innerHTML = sanitizeHtml(v.content || "");
+        S.applyingEditor = false;
+        updateEditorEmpty();
+        await saveText(sectionId, $("#editor").innerHTML, true);
         $("#history-modal").hidden = true;
-        toast("Version restored", "success");
-      });
+        toast("Restored", "success");
+      };
       list.appendChild(li);
     });
   }
 
-  // -------------------- Chat --------------------
+  /* ---------- Chat UI ---------- */
   function updateChatBadge() {
     const n =
       S.unreadChat > 0
@@ -1892,42 +1812,36 @@
           : String(S.unreadChat)
         : "";
     ["#chat-badge", "#chat-badge-mobile"].forEach((sel) => {
-      const badge = $(sel);
-      if (!badge) return;
+      const b = $(sel);
+      if (!b) return;
       if (S.unreadChat > 0) {
-        badge.hidden = false;
-        badge.textContent = n;
-      } else {
-        badge.hidden = true;
-      }
+        b.hidden = false;
+        b.textContent = n;
+      } else b.hidden = true;
     });
   }
-
-  function renderChat(stickBottom = false) {
-    const box = $("#chat-messages");
-    const empty = $("#chat-empty");
+  function renderChat(stick = false) {
+    const box = $("#chat-messages"),
+      empty = $("#chat-empty");
     if (!box || !empty) return;
-    const wasNearBottom =
-      stickBottom || box.scrollHeight - box.scrollTop - box.clientHeight < 100;
-
+    const near =
+      stick || box.scrollHeight - box.scrollTop - box.clientHeight < 100;
     [...box.children].forEach((c) => {
       if (c.id !== "chat-empty") c.remove();
     });
-
     if (!S.messages.length) {
       empty.hidden = false;
       return;
     }
     empty.hidden = true;
-
-    let lastDate = "";
+    let last = "";
     S.messages.forEach((msg) => {
-      const label = formatDateLabel(msg.created_at);
-      if (label && label !== lastDate) {
-        lastDate = label;
+      const lab = formatDateLabel(msg.created_at);
+      if (lab && lab !== last) {
+        last = lab;
         const sep = document.createElement("div");
         sep.className = "chat-date-sep";
-        sep.textContent = label;
+        sep.textContent = lab;
         box.appendChild(sep);
       }
       const mine = msg.user_id
@@ -1936,23 +1850,15 @@
       const row = document.createElement("div");
       row.className = `chat-msg${mine ? " mine" : ""}`;
       const seed = msg.user_id || msg.user_name || "";
-      row.innerHTML = `
-        <div class="msg-avatar" style="background:${avatarColor(seed)}">${escapeHtml(initials(msg.user_name))}</div>
-        <div class="msg-body">
-          <div class="msg-name"></div>
-          <div class="msg-text"></div>
-          <div class="msg-time"></div>
-        </div>
-      `;
+      row.innerHTML = `<div class="msg-avatar" style="background:${avatarColor(seed)}">${escapeHtml(initials(msg.user_name))}</div>
+        <div class="msg-body"><div class="msg-name"></div><div class="msg-text"></div><div class="msg-time"></div></div>`;
       row.querySelector(".msg-name").textContent = msg.user_name;
       row.querySelector(".msg-text").textContent = msg.message;
       row.querySelector(".msg-time").textContent = formatTime(msg.created_at);
       box.appendChild(row);
     });
-
-    if (wasNearBottom) box.scrollTop = box.scrollHeight;
+    if (near) box.scrollTop = box.scrollHeight;
   }
-
   async function sendChat(e) {
     e.preventDefault();
     if (!S.session) return;
@@ -1960,101 +1866,126 @@
     const message = input.value.trim();
     if (!message) return;
     input.value = "";
-
-    const tempId = uuid();
     const row = {
-      id: tempId,
+      id: uuid(),
       session_id: S.session.id,
       user_id: S.user.user_id,
       user_name: S.user.name,
       message,
       created_at: new Date().toISOString(),
     };
-
+    // optimistic once
+    upsertMessage(row, { fromRemote: false });
     try {
       if (S.demo) {
-        const data = Demo.getSessionData(S.session.id);
-        data.messages.push(row);
+        Demo.data(S.session.id).messages.push(row);
         Demo.persist();
-        S.knownMessageIds.add(row.id);
-        S.messages.push(row);
-        renderChat(true);
         return;
       }
-
-      // Optimistic local (dedupe by known set when realtime echoes)
-      S.knownMessageIds.add(tempId);
-      // Don't push temp if we wait for server id — wait for insert result
+      broadcast("chat", { message: row });
       const { data, error } = await S.sb
         .from("chat_messages")
         .insert({
-          session_id: S.session.id,
-          user_id: S.user.user_id,
-          user_name: S.user.name,
-          message,
+          id: row.id,
+          session_id: row.session_id,
+          user_id: row.user_id,
+          user_name: row.user_name,
+          message: row.message,
         })
         .select()
         .single();
       if (error) throw error;
-      S.knownMessageIds.delete(tempId);
-      if (!S.knownMessageIds.has(data.id)) {
-        S.knownMessageIds.add(data.id);
-        S.messages.push(data);
-        renderChat(true);
+      // if server returned same id we're good; if different, map it
+      if (data && data.id !== row.id) {
+        S.msgById.delete(row.id);
+        S.messages = S.messages.filter((m) => m.id !== row.id);
+        upsertMessage(data, { fromRemote: false });
       }
-    } catch (err) {
-      toast(err.message || "Failed to send", "error");
+    } catch (ex) {
+      // rollback optimistic
+      S.msgById.delete(row.id);
+      S.messages = S.messages.filter((m) => m.id !== row.id);
+      renderChat(true);
+      toast(ex.message || "Send failed", "error");
       input.value = message;
     }
   }
+  function throttleTyping(where) {
+    const now = Date.now();
+    if (now - S.typingAt < 700) return;
+    S.typingAt = now;
+    broadcast("typing", { where });
+  }
+  function updateTypingUI() {
+    const ed = $("#typing-indicator"),
+      chat = $("#chat-typing");
+    if (!ed || !chat) return;
+    if (S.remoteTyping?.where === "editor") {
+      ed.hidden = false;
+      ed.textContent = `${S.remoteTyping.user_name} is typing…`;
+    } else ed.hidden = true;
+    if (S.remoteTyping?.where === "chat") {
+      chat.hidden = false;
+      chat.textContent = `${S.remoteTyping.user_name} is typing…`;
+    } else chat.hidden = true;
+  }
+  function renderPresence() {
+    const el = $("#online-users");
+    if (!el) return;
+    el.innerHTML = "";
+    const people = [];
+    if (S.demo && S.user)
+      people.push({ user_id: S.user.user_id, name: S.user.name });
+    else
+      Object.values(S.presence || {}).forEach((arr) =>
+        (arr || []).forEach((p) => {
+          if (p?.user_id && !people.find((x) => x.user_id === p.user_id))
+            people.push(p);
+        }),
+      );
+    people.slice(0, 8).forEach((p) => {
+      const c = document.createElement("span");
+      c.className = "ou-chip";
+      c.style.background = avatarColor(p.user_id || p.name);
+      c.textContent = initials(p.name || p.user_id || "?");
+      c.title = p.name || p.user_id;
+      el.appendChild(c);
+    });
+  }
 
-  // -------------------- Tasks --------------------
+  /* ---------- Tasks ---------- */
   function renderTasks() {
-    const list = $("#task-list");
-    const empty = $("#task-empty");
+    const list = $("#task-list"),
+      empty = $("#task-empty");
     if (!list || !empty) return;
     list.innerHTML = "";
     const total = S.todos.length;
     const done = S.todos.filter((t) => t.completed).length;
-    const pending = total - done;
     $("#task-total").textContent = total;
     $("#task-done").textContent = done;
-    $("#task-pending").textContent = pending;
+    $("#task-pending").textContent = total - done;
     $("#task-progress").style.width = total
       ? `${Math.round((done / total) * 100)}%`
       : "0%";
-
     if (!total) {
       empty.hidden = false;
       return;
     }
     empty.hidden = true;
-
-    // pending first, then done
-    const ordered = [
+    [
       ...S.todos.filter((t) => !t.completed),
       ...S.todos.filter((t) => t.completed),
-    ];
-
-    ordered.forEach((t) => {
+    ].forEach((t) => {
       const li = document.createElement("li");
       li.className = `task-item${t.completed ? " done" : ""}`;
-      li.innerHTML = `
-        <button class="task-check" type="button" aria-label="Toggle"><i class="fa-solid fa-check"></i></button>
-        <span class="task-text"></span>
-        <button class="task-del" type="button" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>
-      `;
+      li.innerHTML = `<button class="task-check" type="button"><i class="fa-solid fa-check"></i></button><span class="task-text"></span><button class="task-del" type="button"><i class="fa-solid fa-trash"></i></button>`;
       li.querySelector(".task-text").textContent = t.text;
-      li.querySelector(".task-check").addEventListener("click", () =>
-        toggleTodo(t.id, !t.completed),
-      );
-      li.querySelector(".task-del").addEventListener("click", () =>
-        deleteTodo(t.id),
-      );
+      li.querySelector(".task-check").onclick = () =>
+        toggleTodo(t.id, !t.completed);
+      li.querySelector(".task-del").onclick = () => deleteTodo(t.id);
       list.appendChild(li);
     });
   }
-
   async function addTodo(e) {
     e.preventDefault();
     if (!S.session) return;
@@ -2062,7 +1993,6 @@
     const text = input.value.trim();
     if (!text) return;
     input.value = "";
-
     try {
       if (S.demo) {
         const row = {
@@ -2072,7 +2002,7 @@
           completed: false,
           created_at: new Date().toISOString(),
         };
-        Demo.getSessionData(S.session.id).todos.push(row);
+        Demo.data(S.session.id).todos.push(row);
         Demo.persist();
         S.todos.push(row);
         renderTasks();
@@ -2088,20 +2018,18 @@
         S.todos.push(data);
         renderTasks();
       }
-    } catch (err) {
-      toast(err.message || "Could not add task", "error");
+    } catch (ex) {
+      toast(ex.message || "Add failed", "error");
     }
   }
-
   async function toggleTodo(id, completed) {
     try {
       if (S.demo) {
-        const data = Demo.getSessionData(S.session.id);
-        const t = data.todos.find((x) => x.id === id);
+        const t = Demo.data(S.session.id).todos.find((x) => x.id === id);
         if (t) t.completed = completed;
         Demo.persist();
-        const local = S.todos.find((x) => x.id === id);
-        if (local) local.completed = completed;
+        const l = S.todos.find((x) => x.id === id);
+        if (l) l.completed = completed;
         renderTasks();
         return;
       }
@@ -2115,16 +2043,15 @@
       const i = S.todos.findIndex((t) => t.id === id);
       if (i >= 0) S.todos[i] = data;
       renderTasks();
-    } catch (err) {
-      toast(err.message || "Update failed", "error");
+    } catch (ex) {
+      toast(ex.message || "Update failed", "error");
     }
   }
-
   async function deleteTodo(id) {
     try {
       if (S.demo) {
-        const data = Demo.getSessionData(S.session.id);
-        data.todos = data.todos.filter((t) => t.id !== id);
+        const d = Demo.data(S.session.id);
+        d.todos = d.todos.filter((t) => t.id !== id);
         Demo.persist();
         S.todos = S.todos.filter((t) => t.id !== id);
         renderTasks();
@@ -2134,56 +2061,47 @@
       if (error) throw error;
       S.todos = S.todos.filter((t) => t.id !== id);
       renderTasks();
-    } catch (err) {
-      toast(err.message || "Delete failed", "error");
+    } catch (ex) {
+      toast(ex.message || "Delete failed", "error");
     }
   }
 
-  // -------------------- Whiteboard --------------------
+  /* ---------- Whiteboard ---------- */
   function getCanvas() {
     return $("#whiteboard");
   }
-
-  function resizeWhiteboard(forceRestore = false) {
+  function resizeWhiteboard(force = false) {
     const canvas = getCanvas();
     if (!canvas) return;
     const stage = canvas.parentElement;
     if (!stage || stage.clientWidth < 2 || stage.clientHeight < 2) return;
-
     const oldDpr = S.wb.dpr || 1;
     const prev = document.createElement("canvas");
     prev.width = canvas.width;
     prev.height = canvas.height;
-    if (canvas.width && canvas.height) {
+    if (canvas.width && canvas.height)
       prev.getContext("2d").drawImage(canvas, 0, 0);
-    }
-
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = stage.clientWidth;
-    const h = stage.clientHeight;
+    const w = stage.clientWidth,
+      h = stage.clientHeight;
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-
-    if (prev.width && prev.height) {
-      // Draw previous bitmap in CSS pixel space using OLD dpr
+    if (prev.width && prev.height)
       ctx.drawImage(prev, 0, 0, prev.width / oldDpr, prev.height / oldDpr);
-    } else if (forceRestore && S.boardData) {
-      restoreBoard(S.boardData);
-    }
-
+    else if (force && S.boardData) restoreBoard(S.boardData);
     S.wb.dpr = dpr;
   }
-
   function restoreBoard(dataUrl) {
     const canvas = getCanvas();
-    if (!canvas || !dataUrl) {
-      if (!dataUrl) clearCanvasLocal();
+    if (!canvas) return;
+    if (!dataUrl) {
+      clearCanvasLocal();
       return;
     }
     const img = new Image();
@@ -2196,10 +2114,8 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.drawImage(img, 0, 0, canvas.clientWidth, canvas.clientHeight);
     };
-    img.onerror = () => {};
     img.src = dataUrl;
   }
-
   function clearCanvasLocal() {
     const canvas = getCanvas();
     if (!canvas) return;
@@ -2208,17 +2124,11 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(S.wb.dpr || 1, 0, 0, S.wb.dpr || 1, 0, 0);
   }
-
   function canvasPos(e) {
-    const canvas = getCanvas();
-    const rect = canvas.getBoundingClientRect();
+    const rect = getCanvas().getBoundingClientRect();
     const src = e.touches ? e.touches[0] : e;
-    return {
-      x: src.clientX - rect.left,
-      y: src.clientY - rect.top,
-    };
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
   }
-
   function drawLine(from, to, color, size, erase) {
     const canvas = getCanvas();
     if (!canvas || !from || !to) return;
@@ -2230,7 +2140,7 @@
     ctx.lineWidth = size;
     if (erase) {
       ctx.globalCompositeOperation = "destination-out";
-      ctx.strokeStyle = "rgba(0,0,0,1)";
+      ctx.strokeStyle = "#000";
     } else {
       ctx.globalCompositeOperation = "source-over";
       ctx.strokeStyle = color;
@@ -2241,31 +2151,21 @@
     ctx.stroke();
     ctx.globalCompositeOperation = "source-over";
   }
-
-  function applyRemoteStroke(payload) {
-    if (!payload?.from || !payload?.to) return;
-    drawLine(
-      payload.from,
-      payload.to,
-      payload.color,
-      payload.size,
-      payload.erase,
-    );
-  }
-
   async function persistBoard(immediate = false) {
     if (!S.session) return;
     const run = async () => {
       const canvas = getCanvas();
-      if (!canvas || !canvas.width) return;
+      if (!canvas?.width) return;
       const sessionId = S.session.id;
       try {
         const url = canvas.toDataURL("image/png");
         S.boardData = url;
+        S.lastBoardHash = hashStr(url);
+        broadcast("whiteboard", { type: "snapshot", data: url });
         if (S.demo) {
-          const data = Demo.getSessionData(sessionId);
-          if (data) {
-            data.board = url;
+          const d = Demo.data(sessionId);
+          if (d) {
+            d.board = url;
             Demo.persist();
           }
           return;
@@ -2276,26 +2176,23 @@
           updated_at: new Date().toISOString(),
           updated_by: S.user.user_id,
         });
-      } catch (err) {
-        console.warn("board persist", err);
+      } catch (e) {
+        console.warn("board save", e);
       }
     };
-
     if (immediate) {
-      if (S.boardSaveTimer) clearTimeout(S.boardSaveTimer);
-      S.boardSaveTimer = null;
+      clearTimeout(S.boardTimer);
+      S.boardTimer = null;
       await run();
       return;
     }
-    clearTimeout(S.boardSaveTimer);
-    S.boardSaveTimer = setTimeout(run, 500);
+    clearTimeout(S.boardTimer);
+    S.boardTimer = setTimeout(run, BOARD_SAVE_MS);
   }
-
   function setupWhiteboardEvents() {
     const canvas = getCanvas();
     if (!canvas || S.wb.bound) return;
     S.wb.bound = true;
-
     const start = (e) => {
       if (e.type === "mousedown" && e.button !== 0) return;
       e.preventDefault();
@@ -2325,7 +2222,6 @@
       S.wb.drawing = false;
       S.wb.last = null;
     };
-
     canvas.addEventListener("mousedown", start);
     canvas.addEventListener("mousemove", move);
     window.addEventListener("mouseup", end);
@@ -2334,16 +2230,16 @@
     canvas.addEventListener("touchend", end);
     canvas.addEventListener("touchcancel", end);
   }
-
   async function clearWhiteboard() {
-    if (!confirm("Clear the whiteboard for everyone?")) return;
+    if (!confirm("Clear whiteboard for everyone?")) return;
     clearCanvasLocal();
     S.boardData = "";
+    S.lastBoardHash = hashStr("");
     broadcast("whiteboard", { type: "clear" });
     if (S.demo) {
-      const data = Demo.getSessionData(S.session.id);
-      if (data) {
-        data.board = "";
+      const d = Demo.data(S.session.id);
+      if (d) {
+        d.board = "";
         Demo.persist();
       }
     } else if (S.sb && S.session) {
@@ -2357,25 +2253,37 @@
     toast("Whiteboard cleared", "info");
   }
 
-  // -------------------- Files --------------------
-  function getFileIcon(type = "", name = "") {
-    const t = type || "";
-    if (t.startsWith("image/"))
+  /* ---------- Files ---------- */
+  const ALLOWED = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "text/plain",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ]);
+  function fileIcon(type = "", name = "") {
+    if (type.startsWith("image/"))
       return { icon: "fa-file-image", color: "#00cec9" };
-    if (t === "application/pdf" || /\.pdf$/i.test(name))
+    if (type === "application/pdf" || /\.pdf$/i.test(name))
       return { icon: "fa-file-pdf", color: "#ff6b6b" };
-    if (t.includes("word") || /\.docx?$/i.test(name))
+    if (type.includes("word") || /\.docx?$/i.test(name))
       return { icon: "fa-file-word", color: "#74b9ff" };
-    if (t.includes("excel") || t.includes("sheet") || /\.xlsx?$/i.test(name))
+    if (
+      type.includes("sheet") ||
+      type.includes("excel") ||
+      /\.xlsx?$/i.test(name)
+    )
       return { icon: "fa-file-excel", color: "#55efc4" };
-    if (t.startsWith("text/") || /\.txt$/i.test(name))
-      return { icon: "fa-file-lines", color: "#a29bfe" };
     return { icon: "fa-file", color: "#dfe6e9" };
   }
-
   function renderFiles() {
-    const grid = $("#files-grid");
-    const empty = $("#files-empty");
+    const grid = $("#files-grid"),
+      empty = $("#files-empty");
     if (!grid || !empty) return;
     grid.innerHTML = "";
     if (!S.files.length) {
@@ -2383,59 +2291,41 @@
       return;
     }
     empty.hidden = true;
-
     S.files.forEach((file) => {
+      const ftype = file.file_type || "application/octet-stream";
+      const meta = fileIcon(ftype, file.file_name || "");
       const card = document.createElement("article");
       card.className = "file-card";
-      const ftype = file.file_type || "application/octet-stream";
-      const meta = getFileIcon(ftype, file.file_name || "");
-      const isImg = ftype.startsWith("image/");
-      card.innerHTML = `
-        <div class="file-preview"></div>
-        <div class="file-meta">
-          <div class="file-name"></div>
-          <div class="file-size"></div>
-        </div>
-        <div class="file-actions">
-          <button class="btn btn-ghost" type="button" data-act="download"><i class="fa-solid fa-download"></i> Download</button>
-          <button class="btn btn-ghost" type="button" data-act="delete"><i class="fa-solid fa-trash"></i></button>
-        </div>
-      `;
+      card.innerHTML = `<div class="file-preview"></div><div class="file-meta"><div class="file-name"></div><div class="file-size"></div></div>
+        <div class="file-actions"><button class="btn btn-ghost" type="button" data-a="dl"><i class="fa-solid fa-download"></i></button>
+        <button class="btn btn-ghost" type="button" data-a="rm"><i class="fa-solid fa-trash"></i></button></div>`;
       card.querySelector(".file-name").textContent = file.file_name || "file";
-      card.querySelector(".file-name").title = file.file_name || "";
       card.querySelector(".file-size").textContent = formatBytes(
         file.file_size,
       );
-      const preview = card.querySelector(".file-preview");
-      if (isImg && file.file_data) {
+      const prev = card.querySelector(".file-preview");
+      if (ftype.startsWith("image/") && file.file_data) {
         const img = document.createElement("img");
         img.src = file.file_data;
-        img.alt = file.file_name || "";
+        img.alt = "";
         img.loading = "lazy";
-        preview.appendChild(img);
-      } else {
-        preview.innerHTML = `<i class="fa-solid ${meta.icon} file-icon" style="color:${meta.color}"></i>`;
-      }
-      card
-        .querySelector('[data-act="download"]')
-        .addEventListener("click", () => downloadFile(file.id));
-      card
-        .querySelector('[data-act="delete"]')
-        .addEventListener("click", () => deleteFile(file.id));
+        prev.appendChild(img);
+      } else
+        prev.innerHTML = `<i class="fa-solid ${meta.icon} file-icon" style="color:${meta.color}"></i>`;
+      card.querySelector('[data-a="dl"]').onclick = () => downloadFile(file.id);
+      card.querySelector('[data-a="rm"]').onclick = () => deleteFile(file.id);
       grid.appendChild(card);
     });
   }
-
-  function readFileAsDataURL(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error("Failed to read file"));
-      reader.readAsDataURL(file);
+  function readAsDataURL(file) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(new Error("read fail"));
+      r.readAsDataURL(file);
     });
   }
-
-  async function compressImageIfNeeded(file, dataUrl) {
+  async function compressIfNeeded(file, dataUrl) {
     if (
       !file.type.startsWith("image/") ||
       file.type === "image/gif" ||
@@ -2449,76 +2339,65 @@
         const max = 1600;
         let { width, height } = img;
         if (width > max || height > max) {
-          const ratio = Math.min(max / width, max / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
+          const r = Math.min(max / width, max / height);
+          width = Math.round(width * r);
+          height = Math.round(height * r);
         }
         const c = document.createElement("canvas");
         c.width = width;
         c.height = height;
         c.getContext("2d").drawImage(img, 0, 0, width, height);
-        const out = c.toDataURL("image/jpeg", 0.82);
-        const newName = file.name.replace(/\.(png|webp|jpe?g)$/i, "") + ".jpg";
-        resolve({ dataUrl: out, type: "image/jpeg", name: newName });
+        resolve({
+          dataUrl: c.toDataURL("image/jpeg", 0.82),
+          type: "image/jpeg",
+          name: file.name.replace(/\.(png|webp|jpe?g)$/i, "") + ".jpg",
+        });
       };
       img.onerror = () =>
         resolve({ dataUrl, type: file.type, name: file.name });
       img.src = dataUrl;
     });
   }
-
-  async function handleFiles(fileList) {
+  async function handleFiles(list) {
     if (!S.session) return;
-    const files = [...fileList];
+    const files = [...list];
     if (!files.length) return;
     setLoading(true, "Uploading…");
-    let uploaded = 0;
-    let skipped = 0;
+    let ok = 0,
+      skip = 0;
     try {
       for (const file of files) {
-        if (file.size > MAX_FILE_BYTES) {
-          toast(`${file.name} exceeds 2MB`, "error");
-          skipped++;
+        if (file.size > MAX_FILE) {
+          toast(`${file.name} > 2MB`, "error");
+          skip++;
           continue;
         }
-        const okType =
-          ALLOWED_MIME.has(file.type) ||
-          /\.(jpe?g|png|gif|webp|pdf|txt|docx?|xlsx?)$/i.test(file.name);
-        if (!okType) {
-          toast(`${file.name}: unsupported type`, "error");
-          skipped++;
+        if (
+          !ALLOWED.has(file.type) &&
+          !/\.(jpe?g|png|gif|webp|pdf|txt|docx?|xlsx?)$/i.test(file.name)
+        ) {
+          toast(`${file.name}: type`, "error");
+          skip++;
           continue;
         }
-
-        let dataUrl = await readFileAsDataURL(file);
-        const compressed = await compressImageIfNeeded(file, dataUrl);
-        dataUrl = compressed.dataUrl;
-        const fileType =
-          compressed.type || file.type || "application/octet-stream";
-        const fileName = compressed.name || file.name;
-        const approxSize = Math.ceil((dataUrl.length * 3) / 4);
-        if (approxSize > MAX_FILE_BYTES * 1.4) {
-          toast(`${fileName} still too large after compression`, "error");
-          skipped++;
-          continue;
-        }
-
+        let dataUrl = await readAsDataURL(file);
+        const c = await compressIfNeeded(file, dataUrl);
+        dataUrl = c.dataUrl;
         const row = {
           id: uuid(),
           session_id: S.session.id,
           section_id: S.activeSectionId,
-          file_name: fileName,
+          file_name: c.name,
           file_data: dataUrl,
-          file_type: fileType,
-          file_size: Math.min(file.size, approxSize),
+          file_type: c.type || "application/octet-stream",
+          file_size: Math.min(file.size, Math.ceil(dataUrl.length * 0.75)),
           created_at: new Date().toISOString(),
         };
-
         if (S.demo) {
-          Demo.getSessionData(S.session.id).files.unshift(row);
+          Demo.data(S.session.id).files.unshift(row);
           Demo.persist();
           S.files.unshift(row);
-          uploaded++;
+          ok++;
         } else {
           const { data, error } = await S.sb
             .from("files")
@@ -2535,66 +2414,53 @@
           if (error) throw error;
           if (!S.files.find((f) => f.id === data.id)) {
             S.files.unshift(data);
-            uploaded++;
+            ok++;
           }
         }
       }
       renderFiles();
-      if (uploaded)
-        toast(
-          `Uploaded ${uploaded} file${uploaded > 1 ? "s" : ""}${skipped ? ` (${skipped} skipped)` : ""}`,
-          "success",
-        );
-      else if (skipped) toast("No files uploaded", "error");
-    } catch (err) {
-      toast(err.message || "Upload failed", "error");
+      if (ok)
+        toast(`Uploaded ${ok}${skip ? ` (${skip} skipped)` : ""}`, "success");
+    } catch (e) {
+      toast(e.message || "Upload failed", "error");
     } finally {
       setLoading(false);
     }
   }
-
-  function downloadFile(fileId) {
-    const file = S.files.find((f) => f.id === fileId);
+  function downloadFile(id) {
+    const file = S.files.find((f) => f.id === id);
     if (!file?.file_data) {
-      toast("File not found", "error");
+      toast("Not found", "error");
       return;
     }
     try {
-      toast(`Downloading ${file.file_name}…`, "info", 1800);
       let dataUrl = file.file_data;
-      if (!dataUrl.includes(",")) {
-        dataUrl = `data:${file.file_type || "application/octet-stream"};base64,${dataUrl}`;
-      }
-      const base64 = dataUrl.split(",")[1];
-      if (!base64) throw new Error("Invalid file data");
-      const byteCharacters = atob(base64);
-      const byteArray = new Uint8Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++)
-        byteArray[i] = byteCharacters.charCodeAt(i);
-      const blob = new Blob([byteArray], {
+      if (!dataUrl.includes(","))
+        dataUrl = `data:${file.file_type};base64,${dataUrl}`;
+      const b64 = dataUrl.split(",")[1];
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      const blob = new Blob([arr], {
         type: file.file_type || "application/octet-stream",
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = file.file_name || "download";
-      document.body.appendChild(a);
+      a.download = file.file_name || "file";
       a.click();
-      a.remove();
       URL.revokeObjectURL(url);
       toast("Download started", "success");
-    } catch (err) {
-      console.error(err);
+    } catch {
       toast("Download failed", "error");
     }
   }
-
   async function deleteFile(id) {
-    if (!confirm("Delete this file?")) return;
+    if (!confirm("Delete file?")) return;
     try {
       if (S.demo) {
-        const data = Demo.getSessionData(S.session.id);
-        data.files = data.files.filter((f) => f.id !== id);
+        const d = Demo.data(S.session.id);
+        d.files = d.files.filter((f) => f.id !== id);
         Demo.persist();
         S.files = S.files.filter((f) => f.id !== id);
       } else {
@@ -2603,24 +2469,21 @@
         S.files = S.files.filter((f) => f.id !== id);
       }
       renderFiles();
-      toast("File deleted", "success");
-    } catch (err) {
-      toast(err.message || "Delete failed", "error");
+      toast("Deleted", "success");
+    } catch (e) {
+      toast(e.message || "Delete failed", "error");
     }
   }
 
-  // -------------------- Panels --------------------
+  /* ---------- Panels ---------- */
   function switchPanel(name) {
     if (!name) return;
     S.activePanel = name;
     $$(".panel").forEach((p) => p.classList.remove("active"));
-    const panel = $(`#panel-${name}`);
-    if (panel) panel.classList.add("active");
-
-    $$(".sidebar-nav .nav-item, #bottom-nav .nav-item").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.panel === name);
-    });
-
+    $(`#panel-${name}`)?.classList.add("active");
+    $$(".sidebar-nav .nav-item, #bottom-nav .nav-item").forEach((b) =>
+      b.classList.toggle("active", b.dataset.panel === name),
+    );
     const titles = {
       editor: "Editor",
       chat: "Team Chat",
@@ -2629,7 +2492,6 @@
       files: "Files",
     };
     $("#panel-title").textContent = titles[name] || name;
-
     if (name === "chat") {
       S.unreadChat = 0;
       updateChatBadge();
@@ -2645,163 +2507,172 @@
     closeSidebar();
   }
 
-  // -------------------- Events --------------------
+  /* ---------- Stats ---------- */
+  async function animateStats() {
+    let users = 0,
+      sessions = 0,
+      messages = 0,
+      tasks = 0;
+    if (!S.demo && S.sb) {
+      try {
+        const [u, s, m, t] = await Promise.all([
+          S.sb.from("users").select("*", { count: "exact", head: true }),
+          S.sb.from("sessions").select("*", { count: "exact", head: true }),
+          S.sb
+            .from("chat_messages")
+            .select("*", { count: "exact", head: true }),
+          S.sb
+            .from("todos")
+            .select("*", { count: "exact", head: true })
+            .eq("completed", true),
+        ]);
+        users = u.count || 0;
+        sessions = s.count || 0;
+        messages = m.count || 0;
+        tasks = t.count || 0;
+      } catch {
+        /* */
+      }
+    } else {
+      users = Object.keys(Demo.users).length;
+      sessions = Object.keys(Demo.sessions).length;
+      Object.values(Demo.sessions).forEach((ss) => {
+        messages += (ss.data?.messages || []).length;
+        tasks += (ss.data?.todos || []).filter((x) => x.completed).length;
+      });
+    }
+    const map = { users, sessions, messages, tasks };
+    $$("[data-stat]").forEach((el) => {
+      el.textContent = (map[el.dataset.stat] || 0).toLocaleString();
+    });
+  }
+
+  /* ---------- Events ---------- */
   function bindEvents() {
     document.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-action]");
       if (!btn) return;
-      const action = btn.dataset.action;
-      if (action === "goto-auth") {
+      const a = btn.dataset.action;
+      if (a === "goto-auth") {
         showView("auth");
         showLogin();
-      } else if (action === "goto-landing") {
-        showView("landing");
-      } else if (action === "show-signup") {
+      } else if (a === "goto-landing") showView("landing");
+      else if (a === "show-signup")
         showSignup(normalizeUserId($("#login-userid").value));
-      } else if (action === "show-login") {
-        showLogin();
-      } else if (action === "logout") {
-        logout();
-      } else if (action === "leave-session") {
-        leaveSession({ silent: false });
-      }
+      else if (a === "show-login") showLogin();
+      else if (a === "logout") logout();
+      else if (a === "leave-session") leaveSession({ silent: false });
     });
-
     $("#nav-toggle")?.addEventListener("click", () => {
-      const links = $("#nav-links");
-      const open = links?.classList.toggle("open");
+      const open = $("#nav-links")?.classList.toggle("open");
       $("#nav-toggle")?.setAttribute("aria-expanded", open ? "true" : "false");
     });
-
     document.addEventListener("click", (e) => {
       if (!e.target.closest(".nav")) closeMobileNav();
     });
-
     $("#form-login")?.addEventListener("submit", handleLogin);
     $("#form-signup")?.addEventListener("submit", handleSignup);
     $("#signup-password")?.addEventListener("input", (e) =>
-      updatePasswordStrength(e.target.value),
+      updatePwStrength(e.target.value),
     );
-
     $("#form-create-session")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const name = $("#create-name").value.trim();
-      const password = $("#create-password").value;
       try {
-        setLoading(true, "Creating session…");
-        const session = await createSession(name, password);
+        setLoading(true, "Creating…");
+        const session = await createSession(
+          $("#create-name").value.trim(),
+          $("#create-password").value,
+        );
         await enterSession(session);
         e.target.reset();
-      } catch (err) {
-        toast(err.message || "Create failed", "error");
+      } catch (ex) {
+        toast(ex.message || "Create failed", "error");
       } finally {
         setLoading(false);
       }
     });
-
     $("#form-join-session")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const id = $("#join-id").value.trim().toUpperCase();
-      const password = $("#join-password").value;
       try {
         setLoading(true, "Joining…");
-        const session = await joinSession(id, password);
+        const session = await joinSession(
+          $("#join-id").value,
+          $("#join-password").value,
+        );
         await enterSession(session);
         e.target.reset();
-      } catch (err) {
-        toast(err.message || "Join failed", "error");
+      } catch (ex) {
+        toast(ex.message || "Join failed", "error");
       } finally {
         setLoading(false);
       }
     });
-
     $("#join-id")?.addEventListener("input", (e) => {
       e.target.value = e.target.value
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, "")
         .slice(0, 6);
     });
-
     $("#copy-session-id")?.addEventListener("click", async () => {
       if (!S.session) return;
       try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(S.session.id);
-        } else {
-          const ta = document.createElement("textarea");
-          ta.value = S.session.id;
-          document.body.appendChild(ta);
-          ta.select();
-          const ok = document.execCommand("copy");
-          ta.remove();
-          if (!ok) throw new Error("copy failed");
-        }
+        await navigator.clipboard.writeText(S.session.id);
         toast("Session ID copied", "success");
       } catch {
-        toast("Could not copy — select ID manually", "error");
+        toast("Copy failed", "error");
       }
     });
-
     $("#delete-session-btn")?.addEventListener("click", deleteSession);
     $("#add-section-btn")?.addEventListener("click", addSection);
     $("#sidebar-toggle")?.addEventListener("click", () => {
-      const open = $("#sidebar")?.classList.contains("open");
-      if (open) closeSidebar();
+      if ($("#sidebar")?.classList.contains("open")) closeSidebar();
       else openSidebar();
     });
     $("#sidebar-backdrop")?.addEventListener("click", closeSidebar);
-
     document.addEventListener("click", (e) => {
       const nav = e.target.closest("[data-panel]");
-      if (!nav || !nav.dataset.panel) return;
-      // ignore if inside a form button without panel intent already handled
-      switchPanel(nav.dataset.panel);
+      if (nav?.dataset.panel) switchPanel(nav.dataset.panel);
     });
-
     $$(".editor-toolbar .tool-btn[data-cmd]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
-        const cmd = btn.dataset.cmd;
-        const val = btn.dataset.val;
+        const cmd = btn.dataset.cmd,
+          val = btn.dataset.val;
         try {
-          if (cmd === "formatBlock") {
-            // Prefer bracket form for broader browser support
-            const tag = val.startsWith("<") ? val : `<${val}>`;
-            document.execCommand("formatBlock", false, tag);
-          } else {
-            document.execCommand(cmd, false, null);
-          }
+          if (cmd === "formatBlock")
+            document.execCommand(
+              "formatBlock",
+              false,
+              val.startsWith("<") ? val : `<${val}>`,
+            );
+          else document.execCommand(cmd, false, null);
         } catch {
-          /* ignore */
+          /* */
         }
         $("#editor")?.focus();
         scheduleSave();
       });
     });
-
     $("#editor")?.addEventListener("input", scheduleSave);
     $("#editor")?.addEventListener("blur", () => {
       if (S.session && S.activeSectionId && !S.leaving) {
         clearTimeout(S.saveTimer);
-        saveTextImmediate(S.activeSectionId, $("#editor").innerHTML);
+        saveText(S.activeSectionId, $("#editor").innerHTML, true);
       }
     });
     $("#history-btn")?.addEventListener("click", openHistory);
-    $$("[data-close]").forEach((b) => {
+    $$("[data-close]").forEach((b) =>
       b.addEventListener("click", () => {
-        const id = b.dataset.close;
-        const m = $(`#${id}`);
+        const m = $(`#${b.dataset.close}`);
         if (m) m.hidden = true;
-      });
-    });
+      }),
+    );
     $("#history-modal")?.addEventListener("click", (e) => {
       if (e.target.id === "history-modal") e.target.hidden = true;
     });
-
     $("#form-chat")?.addEventListener("submit", sendChat);
     $("#chat-input")?.addEventListener("input", () => throttleTyping("chat"));
     $("#form-task")?.addEventListener("submit", addTodo);
-
     $$("[data-wb]").forEach((btn) => {
       btn.addEventListener("click", () => {
         $$("[data-wb]").forEach((b) => b.classList.remove("active"));
@@ -2810,135 +2681,102 @@
       });
     });
     $("#wb-clear")?.addEventListener("click", clearWhiteboard);
-
-    const dz = $("#dropzone");
-    const fi = $("#file-input");
+    const dz = $("#dropzone"),
+      fi = $("#file-input");
     dz?.addEventListener("click", () => fi?.click());
     fi?.addEventListener("change", () => {
       handleFiles(fi.files);
       fi.value = "";
     });
-    ["dragenter", "dragover"].forEach((ev) => {
+    ["dragenter", "dragover"].forEach((ev) =>
       dz?.addEventListener(ev, (e) => {
         e.preventDefault();
         dz.classList.add("dragover");
-      });
-    });
-    ["dragleave", "drop"].forEach((ev) => {
+      }),
+    );
+    ["dragleave", "drop"].forEach((ev) =>
       dz?.addEventListener(ev, (e) => {
         e.preventDefault();
         dz.classList.remove("dragover");
-      });
-    });
+      }),
+    );
     dz?.addEventListener("drop", (e) => handleFiles(e.dataTransfer.files));
-
     window.addEventListener("resize", () => {
       if (S.activePanel === "whiteboard") resizeWhiteboard(false);
     });
-
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener("resize", () => {
-        document.documentElement.style.setProperty(
-          "--vvh",
-          `${window.visualViewport.height}px`,
-        );
-        if (S.activePanel === "chat") {
-          const box = $("#chat-messages");
-          if (box) box.scrollTop = box.scrollHeight;
-        }
-      });
-    }
-
-    window.addEventListener("beforeunload", () => {
-      if (!S.session || !S.activeSectionId) return;
-      const html = $("#editor")?.innerHTML || "";
-      if (S.demo) {
-        try {
-          const data = Demo.getSessionData(S.session.id);
-          if (data?.texts[S.activeSectionId]) {
-            data.texts[S.activeSectionId].content = sanitizeHtml(html);
-            Demo.persist();
-          }
-          if (data && S.boardData) data.board = S.boardData;
-          Demo.persist();
-        } catch {
-          /* ignore */
-        }
-      }
-      // Supabase: best-effort keepalive is limited; blur-save covers most cases
-    });
-
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         closeSidebar();
         closeMobileNav();
-        const modal = $("#history-modal");
-        if (modal && !modal.hidden) modal.hidden = true;
+        const m = $("#history-modal");
+        if (m) m.hidden = true;
       }
     });
-
-    window.addEventListener("unhandledrejection", (e) => {
-      console.warn("Unhandled rejection", e.reason);
+    window.addEventListener("beforeunload", () => {
+      if (!S.session || !S.activeSectionId || !S.demo) return;
+      try {
+        const data = Demo.data(S.session.id);
+        if (data?.texts[S.activeSectionId]) {
+          data.texts[S.activeSectionId].content = sanitizeHtml(
+            $("#editor")?.innerHTML || "",
+          );
+          if (S.boardData) data.board = S.boardData;
+          Demo.persist();
+        }
+      } catch {
+        /* */
+      }
     });
   }
 
-  // -------------------- Boot --------------------
+  /* ---------- Boot ---------- */
   async function boot() {
     bindEvents();
     setLoading(true, "Starting SyncSpace…");
     try {
       await initSupabase();
-      const saved = restoreUserSession();
+      const saved = restoreAuth();
       if (saved?.user_id) {
         try {
           const user = await findUser(saved.user_id);
-          if (user && user.user_id === normalizeUserId(saved.user_id)) {
-            // Soft restore: still require that account exists; password not re-prompted (session convenience)
+          if (user) {
             S.user = {
               user_id: user.user_id,
               name: user.name,
               role: user.role || "member",
             };
-            persistUserSession();
+            persistAuth();
             enterHub();
           } else {
             localStorage.removeItem(LS.auth);
             showView("landing");
           }
         } catch {
-          // Offline demo: allow cached identity
-          if (S.demo && saved.user_id && saved.name) {
+          if (S.demo && saved.name) {
             S.user = {
               user_id: normalizeUserId(saved.user_id),
               name: saved.name,
-              role: saved.role || "member",
+              role: "member",
             };
             enterHub();
-          } else {
-            showView("landing");
-          }
+          } else showView("landing");
         }
-      } else {
-        showView("landing");
-      }
+      } else showView("landing");
       animateStats();
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error(e);
       showView("landing");
-      toast("Started in limited mode", "info");
+      toast("Limited mode", "info");
     } finally {
       setLoading(false);
     }
-
     if ("serviceWorker" in navigator) {
-      const swPath = new URL("sw.js", window.location.href).pathname;
-      navigator.serviceWorker.register(swPath).catch(() => {});
+      navigator.serviceWorker
+        .register(new URL("sw.js", location.href).pathname)
+        .catch(() => {});
     }
   }
-
-  if (document.readyState === "loading") {
+  if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
-  }
+  else boot();
 })();
