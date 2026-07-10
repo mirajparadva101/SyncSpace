@@ -1771,6 +1771,110 @@ body::before {
   display: none !important;
 }
 
+/* Hub recent sessions */
+.hub-recent {
+  margin-top: 1.25rem;
+  padding: 1rem 1.2rem;
+  border-radius: var(--radius);
+}
+.hub-recent h4 {
+  font-size: 0.85rem;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.65rem;
+}
+.hub-recent ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.hub-recent li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border-soft);
+  font-size: 0.9rem;
+}
+.hub-recent .mono {
+  color: var(--secondary);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+/* Online users */
+.online-users {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+  min-height: 0;
+}
+.online-users .ou-chip {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Sidebar backdrop (mobile) */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+.sidebar-backdrop[hidden] {
+  display: none !important;
+}
+
+/* Mobile chat badge on bottom nav */
+.bottom-nav .nav-item {
+  position: relative;
+}
+.badge-float {
+  position: absolute;
+  top: 2px;
+  right: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+}
+
+/* Editor placeholder when only <br> / whitespace */
+.editor-surface.is-empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-3);
+  pointer-events: none;
+  position: absolute;
+}
+.editor-surface {
+  position: relative;
+}
+
+/* Toast cap spacing */
+.toast-wrap {
+  max-height: 50vh;
+  overflow: hidden;
+}
+
 /* Scrollbars */
 ::-webkit-scrollbar {
   width: 8px;

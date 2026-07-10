@@ -1,12 +1,13 @@
 syncspace/
-├── index.html                  # Landing page + Auth + Dashboard (all views)
-├── style.css                   # Glassmorphism design system + animations
-├── app.js                      # App logic, auth, realtime, features
+├── index.html                  # Landing + Auth + Hub + Dashboard
+├── style.css                   # Glassmorphism + responsive + hub/presence UI
+├── app.js                      # Full app logic (bugfix rewrite)
 ├── manifest.json               # PWA manifest
-├── sw.js                       # Service Worker (offline cache)
-├── schema.sql                  # Supabase PostgreSQL schema
-├── vercel.json                 # Vercel routing & headers
+├── sw.js                       # Service Worker v2 (network-first shell)
+├── schema.sql                  # Supabase schema + whiteboards + unique texts
+├── vercel.json                 # Deploy config (safe SPA rewrite)
 ├── api/
-│   └── config.js               # Secure Supabase env config endpoint
-├── README.md                   # Setup & documentation
-└── file-structure.txt          # This file
+│   └── config.js               # SUPABASE_URL / SUPABASE_ANON_KEY endpoint
+├── .gitignore
+├── README.md
+└── file-structure.txt

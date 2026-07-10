@@ -1,59 +1,138 @@
 /* ============================================================
-   SyncSpace — Application Logic
-   Auth · Sessions · Realtime · Editor · Chat · Tasks · WB · Files
+   SyncSpace — Application Logic (rewrite)
+   Fixes: leave/delete navigation, save races, chat/file/todo
+   dedupe, editor merge, whiteboard persist+clear sync, DPR,
+   unread badges, ownership, timers, demo multi-tab fingerprint
    ============================================================ */
 
 (() => {
   "use strict";
 
+  const SESSION_MS = 30 * 60 * 1000;
+  const SAVE_DEBOUNCE = 800;
+  const MAX_FILE_BYTES = 2 * 1024 * 1024;
+  const MAX_TOASTS = 5;
+  const LS = {
+    users: "ss_users_v2",
+    sessions: "ss_sessions_v2",
+    auth: "ss_auth_v2",
+    recent: "ss_recent_v2",
+  };
+
+  const ALLOWED_MIME = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "text/plain",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ]);
+
   // -------------------- State --------------------
   const S = {
     sb: null,
     demo: true,
-    user: null, // { user_id, name, role }
-    session: null, // { id, name }
+    user: null,
+    session: null, // { id, name, created_by, ends_at, passwordHash? }
     sections: [],
     activeSectionId: null,
-    texts: {}, // sectionId -> { id, content }
+    texts: {},
     files: [],
     todos: [],
     messages: [],
+    boardData: "",
     channel: null,
+    demoPoll: null,
     saveTimer: null,
+    saveGeneration: 0,
     timerInterval: null,
     timerEndsAt: null,
     unreadChat: 0,
+    knownMessageIds: new Set(),
     activePanel: "editor",
-    wb: { tool: "pen", drawing: false, last: null, dpr: 1 },
-    typingTimer: null,
+    wb: { tool: "pen", drawing: false, last: null, dpr: 1, bound: false },
     connected: false,
     remoteTyping: null,
+    typingClear: null,
+    typingThrottle: 0,
+    boardSaveTimer: null,
+    presence: {},
+    applyingRemoteEditor: false,
+    statsAnimated: false,
+    leaving: false,
   };
 
-  // Local demo store (when Supabase is not configured)
+  // -------------------- Demo store --------------------
   const Demo = {
-    users: JSON.parse(localStorage.getItem("ss_users") || "{}"),
-    sessions: JSON.parse(localStorage.getItem("ss_sessions") || "{}"),
+    users: safeParse(localStorage.getItem(LS.users), {}),
+    sessions: safeParse(localStorage.getItem(LS.sessions), {}),
     persist() {
-      localStorage.setItem("ss_users", JSON.stringify(this.users));
-      localStorage.setItem("ss_sessions", JSON.stringify(this.sessions));
+      try {
+        localStorage.setItem(LS.users, JSON.stringify(this.users));
+        localStorage.setItem(LS.sessions, JSON.stringify(this.sessions));
+      } catch (err) {
+        if (err && (err.name === "QuotaExceededError" || err.code === 22)) {
+          toast(
+            "Storage full — remove some files or clear old sessions",
+            "error",
+            5000,
+          );
+        }
+        throw err;
+      }
     },
     getSessionData(id) {
-      if (!this.sessions[id]) return null;
+      if (!id || !this.sessions[id]) return null;
       if (!this.sessions[id].data) {
-        this.sessions[id].data = {
-          sections: [],
-          texts: {},
-          messages: [],
-          todos: [],
-          files: [],
-          versions: {},
-          board: null,
-        };
+        this.sessions[id].data = emptySessionData();
       }
       return this.sessions[id].data;
     },
+    fingerprint(id) {
+      const d = this.getSessionData(id);
+      if (!d) return "";
+      return [
+        d.messages.length,
+        d.messages.map((m) => m.id).join(","),
+        d.todos
+          .map((t) => `${t.id}:${t.completed ? 1 : 0}:${t.text}`)
+          .join("|"),
+        d.files.map((f) => f.id).join(","),
+        d.sections.map((s) => `${s.id}:${s.name}`).join("|"),
+        (d.board || "").length,
+        Object.keys(d.texts || {})
+          .map(
+            (k) =>
+              `${k}:${(d.texts[k].content || "").length}:${d.texts[k].updated_at || ""}`,
+          )
+          .join(";"),
+      ].join("::");
+    },
   };
+
+  function emptySessionData() {
+    return {
+      sections: [],
+      texts: {},
+      messages: [],
+      todos: [],
+      files: [],
+      versions: {},
+      board: "",
+    };
+  }
+
+  function safeParse(raw, fallback) {
+    try {
+      return raw ? JSON.parse(raw) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
 
   // -------------------- DOM helpers --------------------
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -63,9 +142,14 @@
     $$(".view").forEach((v) => v.classList.remove("active"));
     const el = $(`#view-${name}`);
     if (el) el.classList.add("active");
+    closeMobileNav();
+    closeSidebar();
     if (name === "landing") animateStats();
+    if (name === "hub") renderRecentSessions();
     if (name === "dashboard") {
-      requestAnimationFrame(() => resizeWhiteboard());
+      requestAnimationFrame(() => {
+        if (S.activePanel === "whiteboard") resizeWhiteboard(true);
+      });
     }
   }
 
@@ -73,11 +157,14 @@
     const el = $("#loading");
     if (!el) return;
     el.hidden = !on;
-    $("#loading-text").textContent = text;
+    const t = $("#loading-text");
+    if (t) t.textContent = text;
   }
 
   function toast(message, type = "info", ms = 3200) {
     const wrap = $("#toasts");
+    if (!wrap) return;
+    while (wrap.children.length >= MAX_TOASTS) wrap.firstElementChild.remove();
     const el = document.createElement("div");
     el.className = `toast ${type}`;
     const icon =
@@ -96,25 +183,21 @@
   }
 
   function setConn(status) {
-    // status: online | offline | connecting
     const dot = $("#conn-dot");
     if (!dot) return;
     dot.classList.remove("online", "offline");
     if (status === "online") {
       dot.classList.add("online");
       S.connected = true;
+      dot.title = "Connected";
     } else if (status === "offline") {
       dot.classList.add("offline");
       S.connected = false;
+      dot.title = "Offline";
     } else {
       S.connected = false;
+      dot.title = "Connecting…";
     }
-    dot.title =
-      status === "online"
-        ? "Connected"
-        : status === "offline"
-          ? "Offline"
-          : "Connecting…";
   }
 
   function setSaveStatus(state) {
@@ -130,6 +213,9 @@
     } else if (state === "error") {
       el.textContent = "Save failed";
       el.classList.add("error");
+    } else if (state === "conflict") {
+      el.textContent = "Updated remotely";
+      el.classList.add("saving");
     } else {
       el.textContent = state;
     }
@@ -137,7 +223,7 @@
 
   function initials(name = "U") {
     return (
-      name
+      String(name || "U")
         .split(/\s+/)
         .filter(Boolean)
         .slice(0, 2)
@@ -148,8 +234,8 @@
 
   function avatarColor(seed = "") {
     let h = 0;
-    for (let i = 0; i < seed.length; i++)
-      h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    const s = String(seed);
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
     const hue = h % 360;
     return `linear-gradient(135deg, hsl(${hue} 70% 55%), hsl(${(hue + 40) % 360} 70% 45%))`;
   }
@@ -172,6 +258,11 @@
   }
 
   async function sha256(text) {
+    if (!window.crypto?.subtle) {
+      throw new Error(
+        "Secure context required (use HTTPS) for password hashing",
+      );
+    }
     const data = new TextEncoder().encode(text);
     const hash = await crypto.subtle.digest("SHA-256", data);
     return [...new Uint8Array(hash)]
@@ -187,10 +278,62 @@
       .replace(/"/g, "&quot;");
   }
 
+  /** Basic HTML sanitizer for editor content (no scripts/handlers) */
+  function sanitizeHtml(html) {
+    const template = document.createElement("template");
+    template.innerHTML = String(html || "");
+    const banned = new Set([
+      "SCRIPT",
+      "STYLE",
+      "IFRAME",
+      "OBJECT",
+      "EMBED",
+      "LINK",
+      "META",
+      "BASE",
+      "FORM",
+      "INPUT",
+      "BUTTON",
+      "TEXTAREA",
+      "SELECT",
+    ]);
+    const walk = (node) => {
+      const children = [...node.childNodes];
+      for (const child of children) {
+        if (child.nodeType === 1) {
+          const tag = child.tagName;
+          if (banned.has(tag)) {
+            child.remove();
+            continue;
+          }
+          [...child.attributes].forEach((attr) => {
+            const n = attr.name.toLowerCase();
+            const v = attr.value || "";
+            if (n.startsWith("on") || n === "srcdoc" || n === "formaction") {
+              child.removeAttribute(attr.name);
+            } else if (
+              (n === "href" || n === "src" || n === "xlink:href") &&
+              /^\s*javascript:/i.test(v)
+            ) {
+              child.removeAttribute(attr.name);
+            }
+          });
+          walk(child);
+        } else if (child.nodeType === 8) {
+          child.remove();
+        }
+      }
+    };
+    walk(template.content);
+    return template.innerHTML;
+  }
+
   function formatBytes(n) {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+    const num = Number(n);
+    if (!Number.isFinite(num) || num < 0) return "—";
+    if (num < 1024) return `${num} B`;
+    if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
+    return `${(num / (1024 * 1024)).toFixed(2)} MB`;
   }
 
   function formatTime(iso) {
@@ -218,26 +361,69 @@
     }
   }
 
+  function normalizeUserId(id) {
+    return String(id || "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function isEditorVisuallyEmpty(el) {
+    if (!el) return true;
+    const text = (el.innerText || "").replace(/\u00a0/g, " ").trim();
+    if (text.length) return false;
+    const html = (el.innerHTML || "").replace(/\s+/g, "").toLowerCase();
+    return (
+      !html ||
+      html === "<br>" ||
+      html === "<div><br></div>" ||
+      html === "<p><br></p>" ||
+      html === "<p></p>"
+    );
+  }
+
+  function updateEditorEmptyClass() {
+    const ed = $("#editor");
+    if (!ed) return;
+    ed.classList.toggle("is-empty", isEditorVisuallyEmpty(ed));
+  }
+
+  function closeMobileNav() {
+    const links = $("#nav-links");
+    const toggle = $("#nav-toggle");
+    links?.classList.remove("open");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+  }
+
+  function closeSidebar() {
+    $("#sidebar")?.classList.remove("open");
+    const bd = $("#sidebar-backdrop");
+    if (bd) bd.hidden = true;
+  }
+
+  function openSidebar() {
+    $("#sidebar")?.classList.add("open");
+    const bd = $("#sidebar-backdrop");
+    if (bd) bd.hidden = false;
+  }
+
   // -------------------- Config / Supabase --------------------
   async function initSupabase() {
     let url = "";
     let key = "";
 
-    // Optional local override for development
     if (window.SYNCSPACE_CONFIG?.url && window.SYNCSPACE_CONFIG?.key) {
       url = window.SYNCSPACE_CONFIG.url;
       key = window.SYNCSPACE_CONFIG.key;
     } else {
       try {
-        const res = await fetch("/api/config");
+        const res = await fetch("/api/config", { cache: "no-store" });
         if (res.ok) {
           const cfg = await res.json();
           url = cfg.url || "";
           key = cfg.key || "";
-          if (cfg.demo) S.demo = true;
         }
       } catch {
-        /* demo mode */
+        /* demo */
       }
     }
 
@@ -246,39 +432,43 @@
         realtime: { params: { eventsPerSecond: 20 } },
       });
       S.demo = false;
-      setConn("online");
+      setConn("connecting");
       return true;
     }
 
     S.demo = true;
     S.sb = null;
-    setConn("online"); // local demo is always "online"
+    setConn("online");
     console.info(
-      "[SyncSpace] Running in DEMO mode (localStorage). Configure Supabase for multi-device realtime.",
+      "[SyncSpace] DEMO mode (localStorage). Configure Supabase for multi-device realtime.",
     );
     return false;
   }
 
-  // -------------------- Stats (landing) --------------------
+  // -------------------- Stats --------------------
   function animateCounter(el, target, duration = 1200) {
     const start = performance.now();
-    const from = 0;
+    const prefersReduce = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (prefersReduce) {
+      el.textContent = Math.round(target).toLocaleString();
+      return;
+    }
     function frame(now) {
       const t = Math.min(1, (now - start) / duration);
       const eased = 1 - Math.pow(1 - t, 3);
-      el.textContent = Math.round(
-        from + (target - from) * eased,
-      ).toLocaleString();
+      el.textContent = Math.round(target * eased).toLocaleString();
       if (t < 1) requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
   }
 
   async function loadLandingStats() {
-    let users = 128;
-    let sessions = 42;
-    let messages = 1840;
-    let tasks = 960;
+    let users = 0;
+    let sessions = 0;
+    let messages = 0;
+    let tasks = 0;
 
     if (!S.demo && S.sb) {
       try {
@@ -293,22 +483,25 @@
             .select("*", { count: "exact", head: true })
             .eq("completed", true),
         ]);
-        if (typeof u.count === "number") users = u.count;
-        if (typeof s.count === "number") sessions = s.count;
-        if (typeof m.count === "number") messages = m.count;
-        if (typeof t.count === "number") tasks = t.count;
+        users = u.count || 0;
+        sessions = s.count || 0;
+        messages = m.count || 0;
+        tasks = t.count || 0;
       } catch {
-        /* keep defaults */
+        /* zeros */
       }
     } else {
-      users = Math.max(users, Object.keys(Demo.users).length);
-      sessions = Math.max(sessions, Object.keys(Demo.sessions).length);
+      users = Object.keys(Demo.users).length;
+      sessions = Object.keys(Demo.sessions).length;
+      Object.values(Demo.sessions).forEach((sess) => {
+        const d = sess.data || {};
+        messages += (d.messages || []).length;
+        tasks += (d.todos || []).filter((x) => x.completed).length;
+      });
     }
-
     return { users, sessions, messages, tasks };
   }
 
-  let statsAnimated = false;
   async function animateStats() {
     const stats = await loadLandingStats();
     const map = {
@@ -319,29 +512,21 @@
     };
     $$("[data-stat]").forEach((el) => {
       const key = el.dataset.stat;
-      if (statsAnimated) {
-        el.textContent = (map[key] || 0).toLocaleString();
-      } else {
-        animateCounter(el, map[key] || 0);
-      }
+      const val = map[key] || 0;
+      if (S.statsAnimated) el.textContent = val.toLocaleString();
+      else animateCounter(el, val);
     });
-    statsAnimated = true;
+    S.statsAnimated = true;
   }
 
   // -------------------- Auth --------------------
   function persistUserSession() {
-    if (S.user) localStorage.setItem("ss_auth", JSON.stringify(S.user));
-    else localStorage.removeItem("ss_auth");
+    if (S.user) localStorage.setItem(LS.auth, JSON.stringify(S.user));
+    else localStorage.removeItem(LS.auth);
   }
 
   function restoreUserSession() {
-    try {
-      const raw = localStorage.getItem("ss_auth");
-      if (!raw) return null;
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
+    return safeParse(localStorage.getItem(LS.auth), null);
   }
 
   function showLogin() {
@@ -361,8 +546,8 @@
     const box = $("#pw-strength");
     if (!box) return;
     let score = 0;
-    if (pw.length >= 4) score++;
-    if (pw.length >= 8) score++;
+    if (pw.length >= 6) score++;
+    if (pw.length >= 10) score++;
     if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
     if (/\d/.test(pw) || /[^A-Za-z0-9]/.test(pw)) score++;
     box.classList.remove("weak", "medium", "strong");
@@ -384,36 +569,41 @@
   }
 
   async function findUser(userId) {
-    if (S.demo) {
-      return Demo.users[userId] || null;
-    }
+    const id = normalizeUserId(userId);
+    if (S.demo) return Demo.users[id] || null;
     const { data, error } = await S.sb
       .from("users")
-      .select("*")
-      .eq("user_id", userId)
+      .select("user_id, name, password, role, created_at")
+      .eq("user_id", id)
       .maybeSingle();
     if (error) throw error;
     return data;
   }
 
   async function createUser({ user_id, name, password }) {
+    const id = normalizeUserId(user_id);
     const hash = await sha256(password);
     if (S.demo) {
-      if (Demo.users[user_id]) throw new Error("User ID already taken");
-      Demo.users[user_id] = {
-        user_id,
-        name,
+      if (Demo.users[id]) throw new Error("User ID already taken");
+      Demo.users[id] = {
+        user_id: id,
+        name: name.trim(),
         password: hash,
         role: "member",
         created_at: new Date().toISOString(),
       };
       Demo.persist();
-      return Demo.users[user_id];
+      return Demo.users[id];
     }
     const { data, error } = await S.sb
       .from("users")
-      .insert({ user_id, name, password: hash, role: "member" })
-      .select()
+      .insert({
+        user_id: id,
+        name: name.trim(),
+        password: hash,
+        role: "member",
+      })
+      .select("user_id, name, role, created_at")
       .single();
     if (error) throw error;
     return data;
@@ -421,7 +611,7 @@
 
   async function handleLogin(e) {
     e.preventDefault();
-    const userId = $("#login-userid").value.trim();
+    const userId = normalizeUserId($("#login-userid").value);
     const password = $("#login-password").value;
     const errEl = $("#login-error");
     errEl.hidden = true;
@@ -432,9 +622,10 @@
     try {
       if (userId.length < 3)
         throw new Error("User ID must be at least 3 characters");
+      if (password.length < 6)
+        throw new Error("Password must be at least 6 characters");
       const user = await findUser(userId);
       if (!user) {
-        // Auto-signup flow
         toast("Account not found — create one to continue", "info");
         showSignup(userId);
         return;
@@ -461,7 +652,7 @@
   async function handleSignup(e) {
     e.preventDefault();
     const name = $("#signup-name").value.trim();
-    const userId = $("#signup-userid").value.trim();
+    const userId = normalizeUserId($("#signup-userid").value);
     const password = $("#signup-password").value;
     const confirm = $("#signup-confirm").value;
     const errEl = $("#signup-error");
@@ -474,11 +665,19 @@
       if (name.length < 2) throw new Error("Please enter your full name");
       if (userId.length < 3)
         throw new Error("User ID must be at least 3 characters");
-      if (!/^[a-zA-Z0-9_.-]+$/.test(userId))
+      if (!/^[a-z0-9_.-]+$/.test(userId))
         throw new Error("User ID: letters, numbers, _ . - only");
-      if (password.length < 4)
-        throw new Error("Password must be at least 4 characters");
+      if (password.length < 6)
+        throw new Error("Password must be at least 6 characters");
       if (password !== confirm) throw new Error("Passwords do not match");
+      // Block very weak passwords
+      if (
+        password === userId ||
+        password === "123456" ||
+        password === "password"
+      ) {
+        throw new Error("Password is too common — choose a stronger one");
+      }
 
       const existing = await findUser(userId);
       if (existing) throw new Error("User ID already taken");
@@ -501,8 +700,8 @@
     }
   }
 
-  function logout() {
-    leaveSession(true);
+  async function logout() {
+    await leaveSession({ silent: true, skipSave: false });
     S.user = null;
     persistUserSession();
     showLogin();
@@ -520,29 +719,84 @@
     showView("hub");
   }
 
+  // -------------------- Recent sessions (device) --------------------
+  function getRecent() {
+    return safeParse(localStorage.getItem(LS.recent), []);
+  }
+
+  function pushRecent(session) {
+    if (!session?.id) return;
+    const list = getRecent().filter((r) => r.id !== session.id);
+    list.unshift({ id: session.id, name: session.name, at: Date.now() });
+    localStorage.setItem(LS.recent, JSON.stringify(list.slice(0, 8)));
+  }
+
+  function renderRecentSessions() {
+    const box = $("#hub-recent");
+    const list = $("#recent-list");
+    if (!box || !list) return;
+    const recent = getRecent();
+    if (!recent.length) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    list.innerHTML = "";
+    recent.forEach((r) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="mono"></span><span class="recent-name"></span>`;
+      li.querySelector(".mono").textContent = r.id;
+      li.querySelector(".recent-name").textContent = r.name || "";
+      li.title = "Click to fill Join form";
+      li.style.cursor = "pointer";
+      li.addEventListener("click", () => {
+        $("#join-id").value = r.id;
+        $("#join-password").focus();
+      });
+      list.appendChild(li);
+    });
+  }
+
   // -------------------- Sessions --------------------
+  async function generateUniqueSessionId() {
+    for (let i = 0; i < 12; i++) {
+      const id = uid(6);
+      if (S.demo) {
+        if (!Demo.sessions[id]) return id;
+      } else {
+        const { data, error } = await S.sb
+          .from("sessions")
+          .select("id")
+          .eq("id", id)
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) return id;
+      }
+    }
+    throw new Error("Could not allocate session ID — try again");
+  }
+
   async function createSession(name, password) {
-    const id = uid(6);
+    const cleanName = String(name || "").trim();
+    if (!cleanName) throw new Error("Session name is required");
+    if (password.length < 3)
+      throw new Error("Session password must be at least 3 characters");
+
+    const id = await generateUniqueSessionId();
     const hash = await sha256(password);
+    const endsAt = new Date(Date.now() + SESSION_MS).toISOString();
 
     if (S.demo) {
+      const secId = uuid();
       Demo.sessions[id] = {
         id,
-        name,
+        name: cleanName,
         password: hash,
+        created_by: S.user.user_id,
+        ends_at: endsAt,
         created_at: new Date().toISOString(),
-        data: {
-          sections: [],
-          texts: {},
-          messages: [],
-          todos: [],
-          files: [],
-          versions: {},
-          board: null,
-        },
+        data: emptySessionData(),
       };
-      // Default section
-      const secId = uuid();
       Demo.sessions[id].data.sections.push({
         id: secId,
         session_id: id,
@@ -558,15 +812,23 @@
         updated_at: new Date().toISOString(),
       };
       Demo.persist();
-      return { id, name };
+      return {
+        id,
+        name: cleanName,
+        created_by: S.user.user_id,
+        ends_at: endsAt,
+      };
     }
 
-    const { error } = await S.sb
-      .from("sessions")
-      .insert({ id, name, password: hash });
+    const { error } = await S.sb.from("sessions").insert({
+      id,
+      name: cleanName,
+      password: hash,
+      created_by: S.user.user_id,
+      ends_at: endsAt,
+    });
     if (error) throw error;
 
-    // Default section + text row
     const { data: section, error: sErr } = await S.sb
       .from("sections")
       .insert({ session_id: id, name: "Main", sort_order: 0 })
@@ -576,33 +838,59 @@
     await S.sb
       .from("texts")
       .insert({ section_id: section.id, session_id: id, content: "" });
-    return { id, name };
+    await S.sb
+      .from("whiteboards")
+      .upsert({ session_id: id, data: "", updated_by: S.user.user_id });
+    return { id, name: cleanName, created_by: S.user.user_id, ends_at: endsAt };
   }
 
   async function joinSession(id, password) {
-    id = id.toUpperCase().trim();
+    id = String(id || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 6);
+    if (id.length !== 6) throw new Error("Session ID must be 6 characters");
+    if (!password || password.length < 3)
+      throw new Error("Enter the session password");
     const hash = await sha256(password);
 
     if (S.demo) {
       const sess = Demo.sessions[id];
       if (!sess) throw new Error("Session not found");
       if (sess.password !== hash) throw new Error("Incorrect session password");
-      return { id: sess.id, name: sess.name };
+      return {
+        id: sess.id,
+        name: sess.name,
+        created_by: sess.created_by || null,
+        ends_at: sess.ends_at || null,
+      };
     }
 
+    // Don't select password into client state beyond verification
     const { data, error } = await S.sb
       .from("sessions")
-      .select("*")
+      .select("id, name, password, created_by, ends_at")
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("Session not found");
     if (data.password !== hash) throw new Error("Incorrect session password");
-    return { id: data.id, name: data.name };
+    return {
+      id: data.id,
+      name: data.name,
+      created_by: data.created_by || null,
+      ends_at: data.ends_at || null,
+    };
   }
 
   async function deleteSession() {
     if (!S.session) return;
+    const isOwner =
+      !S.session.created_by || S.session.created_by === S.user.user_id;
+    if (!isOwner) {
+      toast("Only the session creator can delete this session", "error");
+      return;
+    }
     if (
       !confirm("Delete this session and all its data? This cannot be undone.")
     )
@@ -617,8 +905,14 @@
         const { error } = await S.sb.from("sessions").delete().eq("id", id);
         if (error) throw error;
       }
+      // Remove from recent
+      localStorage.setItem(
+        LS.recent,
+        JSON.stringify(getRecent().filter((r) => r.id !== id)),
+      );
       toast("Session deleted", "success");
-      leaveSession(true);
+      await leaveSession({ silent: true, skipSave: true });
+      enterHub();
     } catch (err) {
       toast(err.message || "Failed to delete session", "error");
     } finally {
@@ -628,32 +922,30 @@
 
   async function enterSession(session) {
     S.session = session;
+    S.leaving = false;
     setLoading(true, "Joining workspace…");
     try {
       await loadSessionData();
       setupRealtime();
       startSessionTimer();
       renderDashboardShell();
+      pushRecent(session);
       showView("dashboard");
       switchPanel("editor");
       toast(`Joined ${session.name}`, "success");
     } catch (err) {
       console.error(err);
       toast(err.message || "Failed to join session", "error");
-      S.session = null;
+      await teardownRealtime();
+      stopSessionTimer();
+      clearSessionState();
+      enterHub();
     } finally {
       setLoading(false);
     }
   }
 
-  function leaveSession(silent = false) {
-    stopSessionTimer();
-    teardownRealtime();
-    // Save editor before leave
-    if (S.activeSectionId) {
-      const html = $("#editor")?.innerHTML || "";
-      saveTextImmediate(S.activeSectionId, html);
-    }
+  function clearSessionState() {
     S.session = null;
     S.sections = [];
     S.activeSectionId = null;
@@ -661,29 +953,93 @@
     S.files = [];
     S.todos = [];
     S.messages = [];
+    S.boardData = "";
     S.unreadChat = 0;
-    if (!silent && S.user) {
-      enterHub();
-      toast("Left session", "info");
+    S.knownMessageIds = new Set();
+    S.presence = {};
+    S.remoteTyping = null;
+  }
+
+  async function leaveSession({ silent = false, skipSave = false } = {}) {
+    if (S.leaving) return;
+    S.leaving = true;
+    try {
+      // Cancel pending debounced save, then flush once
+      if (S.saveTimer) {
+        clearTimeout(S.saveTimer);
+        S.saveTimer = null;
+      }
+      if (S.boardSaveTimer) {
+        clearTimeout(S.boardSaveTimer);
+        S.boardSaveTimer = null;
+      }
+      if (S.typingClear) {
+        clearTimeout(S.typingClear);
+        S.typingClear = null;
+      }
+
+      stopSessionTimer();
+
+      if (!skipSave && S.session && S.activeSectionId) {
+        const html = $("#editor")?.innerHTML || "";
+        try {
+          await saveTextImmediate(S.activeSectionId, html);
+        } catch (err) {
+          console.warn("Final save failed", err);
+        }
+        try {
+          await persistBoard(true);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      await teardownRealtime();
+      clearSessionState();
+
+      // Clear dashboard DOM remnants
+      const ed = $("#editor");
+      if (ed) ed.innerHTML = "";
+      updateEditorEmptyClass();
+
+      if (!silent && S.user) {
+        enterHub();
+        toast("Left session", "info");
+      }
+    } finally {
+      S.leaving = false;
     }
   }
 
   function renderDashboardShell() {
+    if (!S.session || !S.user) return;
     $("#session-id-label").textContent = S.session.id;
     $("#session-name-label").textContent = S.session.name;
     const av = $("#dash-avatar");
     av.textContent = initials(S.user.name);
     av.style.background = avatarColor(S.user.user_id);
+
+    const delBtn = $("#delete-session-btn");
+    if (delBtn) {
+      const isOwner =
+        !S.session.created_by || S.session.created_by === S.user.user_id;
+      delBtn.hidden = !isOwner;
+      delBtn.title = isOwner ? "Delete session" : "Only creator can delete";
+    }
+
     renderSections();
-    renderChat();
+    renderChat(true);
     renderTasks();
     renderFiles();
-    setConn(S.demo || S.connected ? "online" : "offline");
+    renderPresence();
+    updateChatBadge();
+    setConn(S.demo || S.connected ? "online" : "connecting");
   }
 
   async function loadSessionData() {
     if (S.demo) {
       const data = Demo.getSessionData(S.session.id);
+      if (!data) throw new Error("Session data missing");
       S.sections = [...(data.sections || [])].sort(
         (a, b) => a.sort_order - b.sort_order,
       );
@@ -691,6 +1047,9 @@
       S.messages = [...(data.messages || [])];
       S.todos = [...(data.todos || [])];
       S.files = [...(data.files || [])];
+      S.boardData = data.board || "";
+      S.knownMessageIds = new Set(S.messages.map((m) => m.id));
+
       if (!S.sections.length) {
         const secId = uuid();
         const sec = {
@@ -714,34 +1073,40 @@
       }
       S.activeSectionId = S.sections[0].id;
       loadEditorContent(S.activeSectionId);
-      // restore whiteboard
-      if (data.board) {
-        setTimeout(() => restoreBoard(data.board), 100);
-      }
       return;
     }
 
     const sid = S.session.id;
-    const [secRes, textRes, chatRes, todoRes, fileRes] = await Promise.all([
-      S.sb
-        .from("sections")
-        .select("*")
-        .eq("session_id", sid)
-        .order("sort_order"),
-      S.sb.from("texts").select("*").eq("session_id", sid),
-      S.sb
-        .from("chat_messages")
-        .select("*")
-        .eq("session_id", sid)
-        .order("created_at")
-        .limit(200),
-      S.sb.from("todos").select("*").eq("session_id", sid).order("created_at"),
-      S.sb
-        .from("files")
-        .select("*")
-        .eq("session_id", sid)
-        .order("created_at", { ascending: false }),
-    ]);
+    const [secRes, textRes, chatRes, todoRes, fileRes, boardRes] =
+      await Promise.all([
+        S.sb
+          .from("sections")
+          .select("*")
+          .eq("session_id", sid)
+          .order("sort_order"),
+        S.sb.from("texts").select("*").eq("session_id", sid),
+        S.sb
+          .from("chat_messages")
+          .select("*")
+          .eq("session_id", sid)
+          .order("created_at")
+          .limit(200),
+        S.sb
+          .from("todos")
+          .select("*")
+          .eq("session_id", sid)
+          .order("created_at"),
+        S.sb
+          .from("files")
+          .select("*")
+          .eq("session_id", sid)
+          .order("created_at", { ascending: false }),
+        S.sb
+          .from("whiteboards")
+          .select("*")
+          .eq("session_id", sid)
+          .maybeSingle(),
+      ]);
 
     if (secRes.error) throw secRes.error;
     S.sections = secRes.data || [];
@@ -760,71 +1125,158 @@
 
     S.texts = {};
     (textRes.data || []).forEach((t) => {
-      S.texts[t.section_id] = t;
+      // Prefer newest if duplicates ever exist
+      const prev = S.texts[t.section_id];
+      if (!prev || new Date(t.updated_at) > new Date(prev.updated_at || 0)) {
+        S.texts[t.section_id] = t;
+      }
     });
     S.messages = chatRes.data || [];
+    S.knownMessageIds = new Set(S.messages.map((m) => m.id));
     S.todos = todoRes.data || [];
     S.files = fileRes.data || [];
+    S.boardData = boardRes.data?.data || "";
+    if (!boardRes.data) {
+      await S.sb
+        .from("whiteboards")
+        .upsert({ session_id: sid, data: "", updated_by: S.user.user_id });
+    }
     S.activeSectionId = S.sections[0].id;
     loadEditorContent(S.activeSectionId);
   }
 
   // -------------------- Realtime --------------------
+  async function teardownRealtime() {
+    if (S.demoPoll) {
+      clearInterval(S.demoPoll);
+      S.demoPoll = null;
+    }
+    if (S.channel && S.sb) {
+      try {
+        await S.sb.removeChannel(S.channel);
+      } catch {
+        /* ignore */
+      }
+    }
+    S.channel = null;
+  }
+
   function setupRealtime() {
+    // fire-and-forget cleanup of previous
     teardownRealtime();
+
     if (S.demo || !S.sb) {
-      // Demo: poll localStorage lightly for multi-tab
-      S.channel = setInterval(() => {
+      let lastFp = Demo.fingerprint(S.session.id);
+      S.demoPoll = setInterval(() => {
+        if (!S.session || S.leaving) return;
         try {
-          const data = Demo.getSessionData(S.session?.id);
+          // Reload sessions from storage for multi-tab
+          Demo.sessions = safeParse(
+            localStorage.getItem(LS.sessions),
+            Demo.sessions,
+          );
+          const fp = Demo.fingerprint(S.session.id);
+          if (fp === lastFp) return;
+          lastFp = fp;
+          const data = Demo.getSessionData(S.session.id);
           if (!data) return;
-          // lightweight sync of messages / todos / files counts
-          if (data.messages.length !== S.messages.length) {
-            S.messages = [...data.messages];
+
+          // messages
+          const prevCount = S.messages.length;
+          const newMsgs = data.messages || [];
+          const added = newMsgs.filter((m) => !S.knownMessageIds.has(m.id));
+          S.messages = [...newMsgs];
+          S.knownMessageIds = new Set(S.messages.map((m) => m.id));
+          if (added.length) {
             if (S.activePanel !== "chat") {
-              S.unreadChat = Math.max(S.unreadChat, 1);
+              S.unreadChat += added.filter(
+                (m) => m.user_id !== S.user.user_id,
+              ).length;
               updateChatBadge();
             }
-            renderChat();
+            renderChat(true);
+          } else if (newMsgs.length !== prevCount) {
+            renderChat(true);
           }
-          if (JSON.stringify(data.todos) !== JSON.stringify(S.todos)) {
-            S.todos = [...data.todos];
-            renderTasks();
+
+          S.todos = [...(data.todos || [])];
+          renderTasks();
+          S.files = [...(data.files || [])];
+          renderFiles();
+
+          // sections
+          const secs = [...(data.sections || [])].sort(
+            (a, b) => a.sort_order - b.sort_order,
+          );
+          S.sections = secs;
+          if (!S.sections.find((s) => s.id === S.activeSectionId)) {
+            if (S.sections[0]) {
+              S.activeSectionId = S.sections[0].id;
+              loadEditorContent(S.activeSectionId);
+            }
           }
-          if (data.files.length !== S.files.length) {
-            S.files = [...data.files];
-            renderFiles();
+          renderSections();
+
+          // texts remote
+          S.texts = { ...(data.texts || {}) };
+          const row = S.texts[S.activeSectionId];
+          const ed = $("#editor");
+          if (
+            row &&
+            ed &&
+            document.activeElement !== ed &&
+            !S.applyingRemoteEditor
+          ) {
+            const remote = sanitizeHtml(row.content || "");
+            if (ed.innerHTML !== remote) {
+              S.applyingRemoteEditor = true;
+              ed.innerHTML = remote;
+              updateEditorEmptyClass();
+              S.applyingRemoteEditor = false;
+              setSaveStatus("conflict");
+              setTimeout(() => setSaveStatus("saved"), 1200);
+            }
           }
-        } catch {
-          /* ignore */
+
+          // board
+          if ((data.board || "") !== S.boardData) {
+            S.boardData = data.board || "";
+            if (S.activePanel === "whiteboard") restoreBoard(S.boardData);
+          }
+        } catch (err) {
+          console.warn("demo poll", err);
         }
-      }, 1000);
+      }, 900);
       setConn("online");
       return;
     }
 
     const sid = S.session.id;
     const ch = S.sb.channel(`session:${sid}`, {
-      config: { broadcast: { self: false }, presence: { key: S.user.user_id } },
+      config: {
+        broadcast: { self: false },
+        presence: { key: S.user.user_id },
+      },
     });
 
     ch.on(
       "postgres_changes",
       {
-        event: "*",
+        event: "INSERT",
         schema: "public",
         table: "chat_messages",
         filter: `session_id=eq.${sid}`,
       },
       (payload) => {
-        if (payload.eventType === "INSERT") {
-          S.messages.push(payload.new);
-          if (S.activePanel !== "chat") {
-            S.unreadChat += 1;
-            updateChatBadge();
-          }
-          renderChat(true);
+        const row = payload.new;
+        if (!row?.id || S.knownMessageIds.has(row.id)) return;
+        S.knownMessageIds.add(row.id);
+        S.messages.push(row);
+        if (S.activePanel !== "chat" && row.user_id !== S.user.user_id) {
+          S.unreadChat += 1;
+          updateChatBadge();
         }
+        renderChat(true);
       },
     );
 
@@ -838,10 +1290,12 @@
       },
       (payload) => {
         if (payload.eventType === "INSERT") {
-          S.todos.push(payload.new);
+          if (!S.todos.find((t) => t.id === payload.new.id))
+            S.todos.push(payload.new);
         } else if (payload.eventType === "UPDATE") {
           const i = S.todos.findIndex((t) => t.id === payload.new.id);
           if (i >= 0) S.todos[i] = payload.new;
+          else S.todos.push(payload.new);
         } else if (payload.eventType === "DELETE") {
           S.todos = S.todos.filter((t) => t.id !== payload.old.id);
         }
@@ -859,7 +1313,8 @@
       },
       (payload) => {
         if (payload.eventType === "INSERT") {
-          S.files.unshift(payload.new);
+          if (!S.files.find((f) => f.id === payload.new.id))
+            S.files.unshift(payload.new);
         } else if (payload.eventType === "DELETE") {
           S.files = S.files.filter((f) => f.id !== payload.old.id);
         }
@@ -884,8 +1339,15 @@
           if (i >= 0) S.sections[i] = payload.new;
         } else if (payload.eventType === "DELETE") {
           S.sections = S.sections.filter((s) => s.id !== payload.old.id);
-          if (S.activeSectionId === payload.old.id && S.sections[0]) {
-            selectSection(S.sections[0].id);
+          if (S.activeSectionId === payload.old.id) {
+            if (S.sections[0]) {
+              S.activeSectionId = S.sections[0].id;
+              loadEditorContent(S.activeSectionId);
+            } else {
+              S.activeSectionId = null;
+              const ed = $("#editor");
+              if (ed) ed.innerHTML = "";
+            }
           }
         }
         S.sections.sort((a, b) => a.sort_order - b.sort_order);
@@ -903,17 +1365,44 @@
       },
       (payload) => {
         const row = payload.new;
+        if (row.updated_by && row.updated_by === S.user.user_id) {
+          S.texts[row.section_id] = row;
+          return;
+        }
         S.texts[row.section_id] = row;
         if (row.section_id === S.activeSectionId) {
           const ed = $("#editor");
-          if (ed && document.activeElement !== ed) {
-            ed.innerHTML = row.content || "";
-          } else if (ed && ed.innerHTML !== row.content) {
-            // soft update indicator
-            setSaveStatus("Remote update");
-            setTimeout(() => setSaveStatus("saved"), 1500);
+          if (!ed) return;
+          const remote = sanitizeHtml(row.content || "");
+          if (document.activeElement !== ed) {
+            S.applyingRemoteEditor = true;
+            ed.innerHTML = remote;
+            updateEditorEmptyClass();
+            S.applyingRemoteEditor = false;
+            setSaveStatus("conflict");
+            setTimeout(() => setSaveStatus("saved"), 1200);
+          } else if (ed.innerHTML !== remote) {
+            // Soft notice while typing — don't clobber caret
+            setSaveStatus("conflict");
           }
         }
+      },
+    );
+
+    ch.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "whiteboards",
+        filter: `session_id=eq.${sid}`,
+      },
+      (payload) => {
+        const row = payload.new;
+        if (!row || row.updated_by === S.user.user_id) return;
+        if ((row.data || "") === S.boardData) return;
+        S.boardData = row.data || "";
+        if (S.activePanel === "whiteboard") restoreBoard(S.boardData);
       },
     );
 
@@ -930,35 +1419,53 @@
 
     ch.on("broadcast", { event: "whiteboard" }, ({ payload }) => {
       if (!payload || payload.user_id === S.user.user_id) return;
+      if (payload.type === "clear") {
+        clearCanvasLocal();
+        S.boardData = "";
+        return;
+      }
       applyRemoteStroke(payload);
     });
 
-    ch.subscribe((status) => {
-      if (status === "SUBSCRIBED") setConn("online");
-      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT")
+    ch.on("presence", { event: "sync" }, () => {
+      const state = ch.presenceState();
+      S.presence = state || {};
+      renderPresence();
+    });
+
+    ch.subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        setConn("online");
+        try {
+          await ch.track({
+            user_id: S.user.user_id,
+            name: S.user.name,
+            online_at: new Date().toISOString(),
+          });
+        } catch {
+          /* presence optional */
+        }
+      } else if (
+        status === "CHANNEL_ERROR" ||
+        status === "TIMED_OUT" ||
+        status === "CLOSED"
+      ) {
         setConn("offline");
-      else setConn("connecting");
+        // light reconnect
+        setTimeout(() => {
+          if (S.session && !S.leaving && S.channel === ch) setupRealtime();
+        }, 2500);
+      } else {
+        setConn("connecting");
+      }
     });
 
     S.channel = ch;
   }
 
-  function teardownRealtime() {
-    if (!S.channel) return;
-    if (S.demo) {
-      clearInterval(S.channel);
-    } else if (S.sb) {
-      try {
-        S.sb.removeChannel(S.channel);
-      } catch {
-        /* */
-      }
-    }
-    S.channel = null;
-  }
-
   function broadcast(event, payload) {
-    if (S.demo || !S.channel || typeof S.channel.send !== "function") return;
+    if (S.demo || !S.channel || typeof S.channel.send !== "function" || !S.user)
+      return;
     S.channel.send({
       type: "broadcast",
       event,
@@ -966,9 +1473,17 @@
     });
   }
 
+  function throttleTyping(where) {
+    const now = Date.now();
+    if (now - S.typingThrottle < 600) return;
+    S.typingThrottle = now;
+    broadcast("typing", { where });
+  }
+
   function updateTypingUI() {
     const ed = $("#typing-indicator");
     const chat = $("#chat-typing");
+    if (!ed || !chat) return;
     if (S.remoteTyping?.where === "editor") {
       ed.hidden = false;
       ed.textContent = `${S.remoteTyping.user_name} is typing…`;
@@ -983,24 +1498,63 @@
     }
   }
 
-  // -------------------- Timer (30 min session) --------------------
+  function renderPresence() {
+    const el = $("#online-users");
+    if (!el) return;
+    el.innerHTML = "";
+    const people = [];
+    Object.values(S.presence || {}).forEach((arr) => {
+      (arr || []).forEach((p) => {
+        if (p?.user_id && !people.find((x) => x.user_id === p.user_id))
+          people.push(p);
+      });
+    });
+    // Always include self in demo
+    if (S.demo && S.user) {
+      people.length = 0;
+      people.push({ user_id: S.user.user_id, name: S.user.name });
+    }
+    people.slice(0, 8).forEach((p) => {
+      const chip = document.createElement("span");
+      chip.className = "ou-chip";
+      chip.style.background = avatarColor(p.user_id || p.name);
+      chip.textContent = initials(p.name || p.user_id || "?");
+      chip.title = p.name || p.user_id;
+      el.appendChild(chip);
+    });
+  }
+
+  // -------------------- Timer (shared ends_at) --------------------
   function startSessionTimer() {
     stopSessionTimer();
-    S.timerEndsAt = Date.now() + 30 * 60 * 1000;
+    let ends = S.session?.ends_at ? new Date(S.session.ends_at).getTime() : NaN;
+    if (!Number.isFinite(ends)) {
+      ends = Date.now() + SESSION_MS;
+      S.session.ends_at = new Date(ends).toISOString();
+      if (S.demo) {
+        const sess = Demo.sessions[S.session.id];
+        if (sess) {
+          sess.ends_at = S.session.ends_at;
+          Demo.persist();
+        }
+      }
+    }
+    S.timerEndsAt = ends;
     const el = $("#session-timer");
+    let endedToast = false;
     const tick = () => {
+      if (!el) return;
       const left = Math.max(0, S.timerEndsAt - Date.now());
       const m = Math.floor(left / 60000);
       const s = Math.floor((left % 60000) / 1000);
       el.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-      if (left <= 0) {
-        stopSessionTimer();
+      if (left <= 0 && !endedToast) {
+        endedToast = true;
         toast(
-          "Session timer ended — you can stay, or leave anytime",
+          "Session timer ended — you can stay or leave anytime",
           "info",
           5000,
         );
-        el.textContent = "00:00";
       }
     };
     tick();
@@ -1015,6 +1569,7 @@
   // -------------------- Sections + Editor --------------------
   function renderSections() {
     const list = $("#section-list");
+    if (!list) return;
     list.innerHTML = "";
     S.sections.forEach((sec) => {
       const li = document.createElement("li");
@@ -1022,12 +1577,17 @@
       li.dataset.id = sec.id;
       li.innerHTML = `
         <span class="sec-name"></span>
-        <button class="sec-del" title="Delete section" type="button"><i class="fa-solid fa-xmark"></i></button>
+        <button class="sec-del" title="Delete section" type="button" aria-label="Delete section"><i class="fa-solid fa-xmark"></i></button>
       `;
       li.querySelector(".sec-name").textContent = sec.name;
+      li.querySelector(".sec-name").title = "Double-click to rename";
       li.addEventListener("click", (e) => {
         if (e.target.closest(".sec-del")) return;
         selectSection(sec.id);
+      });
+      li.addEventListener("dblclick", (e) => {
+        if (e.target.closest(".sec-del")) return;
+        renameSection(sec.id);
       });
       li.querySelector(".sec-del").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1036,14 +1596,14 @@
       list.appendChild(li);
     });
     const active = S.sections.find((s) => s.id === S.activeSectionId);
-    $("#editor-section-name").textContent = active?.name || "Untitled";
+    const nameEl = $("#editor-section-name");
+    if (nameEl) nameEl.textContent = active?.name || "Untitled";
   }
 
   async function selectSection(id) {
-    if (id === S.activeSectionId) return;
-    // auto-save current
+    if (!id || id === S.activeSectionId) return;
     if (S.activeSectionId) {
-      await saveTextImmediate(S.activeSectionId, $("#editor").innerHTML);
+      await saveTextImmediate(S.activeSectionId, $("#editor")?.innerHTML || "");
     }
     S.activeSectionId = id;
     loadEditorContent(id);
@@ -1053,38 +1613,50 @@
   function loadEditorContent(sectionId) {
     const row = S.texts[sectionId];
     const ed = $("#editor");
-    ed.innerHTML = row?.content || "";
+    if (!ed) return;
+    S.applyingRemoteEditor = true;
+    ed.innerHTML = sanitizeHtml(row?.content || "");
+    S.applyingRemoteEditor = false;
+    updateEditorEmptyClass();
     setSaveStatus("saved");
   }
 
   function scheduleSave() {
+    if (S.applyingRemoteEditor || S.leaving || !S.session) return;
     setSaveStatus("saving");
+    updateEditorEmptyClass();
     clearTimeout(S.saveTimer);
+    const gen = ++S.saveGeneration;
     S.saveTimer = setTimeout(() => {
-      if (S.activeSectionId)
-        saveTextImmediate(S.activeSectionId, $("#editor").innerHTML);
-    }, 800);
-    // typing broadcast
-    broadcast("typing", { where: "editor" });
+      S.saveTimer = null;
+      if (gen !== S.saveGeneration) return;
+      if (!S.session || !S.activeSectionId || S.leaving) return;
+      saveTextImmediate(S.activeSectionId, $("#editor")?.innerHTML || "");
+    }, SAVE_DEBOUNCE);
+    throttleTyping("editor");
   }
 
   async function saveTextImmediate(sectionId, content) {
+    if (!S.session || !sectionId || S.leaving) return;
+    const sessionId = S.session.id;
+    const clean = sanitizeHtml(content);
+    const now = new Date().toISOString();
+
     try {
-      const now = new Date().toISOString();
       if (S.demo) {
-        const data = Demo.getSessionData(S.session.id);
+        const data = Demo.getSessionData(sessionId);
+        if (!data) return;
         if (!data.texts[sectionId]) {
           data.texts[sectionId] = {
             id: uuid(),
             section_id: sectionId,
-            session_id: S.session.id,
+            session_id: sessionId,
             content: "",
             updated_at: now,
           };
         }
-        // version snapshot occasionally
         const prev = data.texts[sectionId].content;
-        if (prev && prev !== content) {
+        if (prev && prev !== clean) {
           if (!data.versions[sectionId]) data.versions[sectionId] = [];
           data.versions[sectionId].unshift({
             id: uuid(),
@@ -1094,43 +1666,56 @@
           });
           data.versions[sectionId] = data.versions[sectionId].slice(0, 20);
         }
-        data.texts[sectionId].content = content;
+        data.texts[sectionId].content = clean;
         data.texts[sectionId].updated_at = now;
+        data.texts[sectionId].updated_by = S.user?.user_id;
         S.texts[sectionId] = data.texts[sectionId];
         Demo.persist();
-        setSaveStatus("saved");
+        if (S.session?.id === sessionId) setSaveStatus("saved");
         return;
       }
 
       const existing = S.texts[sectionId];
       if (existing?.id) {
-        // version
-        if (existing.content && existing.content !== content) {
+        if (existing.content && existing.content !== clean) {
           await S.sb
             .from("text_versions")
             .insert({ section_id: sectionId, content: existing.content });
         }
         const { data, error } = await S.sb
           .from("texts")
-          .update({ content, updated_at: now })
+          .update({
+            content: clean,
+            updated_at: now,
+            updated_by: S.user.user_id,
+          })
           .eq("id", existing.id)
           .select()
           .single();
         if (error) throw error;
-        S.texts[sectionId] = data;
+        if (S.session?.id === sessionId) S.texts[sectionId] = data;
       } else {
         const { data, error } = await S.sb
           .from("texts")
-          .insert({ section_id: sectionId, session_id: S.session.id, content })
+          .upsert(
+            {
+              section_id: sectionId,
+              session_id: sessionId,
+              content: clean,
+              updated_at: now,
+              updated_by: S.user.user_id,
+            },
+            { onConflict: "section_id" },
+          )
           .select()
           .single();
         if (error) throw error;
-        S.texts[sectionId] = data;
+        if (S.session?.id === sessionId) S.texts[sectionId] = data;
       }
-      setSaveStatus("saved");
+      if (S.session?.id === sessionId) setSaveStatus("saved");
     } catch (err) {
       console.error(err);
-      setSaveStatus("error");
+      if (S.session?.id === sessionId) setSaveStatus("error");
     }
   }
 
@@ -1139,7 +1724,7 @@
     if (name === null) return;
     const clean = (name || "Untitled").trim().slice(0, 48) || "Untitled";
     const sort_order = S.sections.length
-      ? Math.max(...S.sections.map((s) => s.sort_order)) + 1
+      ? Math.max(...S.sections.map((s) => s.sort_order || 0)) + 1
       : 0;
 
     try {
@@ -1177,12 +1762,40 @@
       await S.sb
         .from("texts")
         .insert({ section_id: sec.id, session_id: S.session.id, content: "" });
-      S.sections.push(sec);
+      if (!S.sections.find((s) => s.id === sec.id)) S.sections.push(sec);
       S.texts[sec.id] = { section_id: sec.id, content: "" };
       await selectSection(sec.id);
       toast("Section added", "success");
     } catch (err) {
       toast(err.message || "Could not add section", "error");
+    }
+  }
+
+  async function renameSection(id) {
+    const sec = S.sections.find((s) => s.id === id);
+    if (!sec) return;
+    const name = prompt("Rename section:", sec.name);
+    if (name === null) return;
+    const clean = name.trim().slice(0, 48) || sec.name;
+    try {
+      if (S.demo) {
+        const data = Demo.getSessionData(S.session.id);
+        const row = data.sections.find((s) => s.id === id);
+        if (row) row.name = clean;
+        Demo.persist();
+        sec.name = clean;
+      } else {
+        const { error } = await S.sb
+          .from("sections")
+          .update({ name: clean })
+          .eq("id", id);
+        if (error) throw error;
+        sec.name = clean;
+      }
+      renderSections();
+      toast("Section renamed", "success");
+    } catch (err) {
+      toast(err.message || "Rename failed", "error");
     }
   }
 
@@ -1206,8 +1819,8 @@
       S.sections = S.sections.filter((s) => s.id !== id);
       delete S.texts[id];
       if (S.activeSectionId === id) {
-        S.activeSectionId = S.sections[0].id;
-        loadEditorContent(S.activeSectionId);
+        S.activeSectionId = S.sections[0]?.id || null;
+        if (S.activeSectionId) loadEditorContent(S.activeSectionId);
       }
       renderSections();
       toast("Section deleted", "success");
@@ -1218,6 +1831,7 @@
 
   async function openHistory() {
     const sectionId = S.activeSectionId;
+    if (!sectionId) return;
     const list = $("#history-list");
     list.innerHTML = '<li class="history-item">Loading…</li>';
     $("#history-modal").hidden = false;
@@ -1225,7 +1839,7 @@
     let versions = [];
     try {
       if (S.demo) {
-        versions = Demo.getSessionData(S.session.id).versions[sectionId] || [];
+        versions = Demo.getSessionData(S.session.id)?.versions[sectionId] || [];
       } else {
         const { data, error } = await S.sb
           .from("text_versions")
@@ -1255,8 +1869,13 @@
       li.innerHTML = `<span></span><button class="btn btn-ghost btn-sm" type="button">Restore</button>`;
       li.querySelector("span").textContent = when;
       li.querySelector("button").addEventListener("click", async () => {
-        $("#editor").innerHTML = v.content || "";
-        await saveTextImmediate(sectionId, v.content || "");
+        if (S.activeSectionId !== sectionId) await selectSection(sectionId);
+        const ed = $("#editor");
+        S.applyingRemoteEditor = true;
+        ed.innerHTML = sanitizeHtml(v.content || "");
+        S.applyingRemoteEditor = false;
+        updateEditorEmptyClass();
+        await saveTextImmediate(sectionId, ed.innerHTML);
         $("#history-modal").hidden = true;
         toast("Version restored", "success");
       });
@@ -1266,22 +1885,31 @@
 
   // -------------------- Chat --------------------
   function updateChatBadge() {
-    const badge = $("#chat-badge");
-    if (S.unreadChat > 0) {
-      badge.hidden = false;
-      badge.textContent = S.unreadChat > 99 ? "99+" : String(S.unreadChat);
-    } else {
-      badge.hidden = true;
-    }
+    const n =
+      S.unreadChat > 0
+        ? S.unreadChat > 99
+          ? "99+"
+          : String(S.unreadChat)
+        : "";
+    ["#chat-badge", "#chat-badge-mobile"].forEach((sel) => {
+      const badge = $(sel);
+      if (!badge) return;
+      if (S.unreadChat > 0) {
+        badge.hidden = false;
+        badge.textContent = n;
+      } else {
+        badge.hidden = true;
+      }
+    });
   }
 
   function renderChat(stickBottom = false) {
     const box = $("#chat-messages");
     const empty = $("#chat-empty");
+    if (!box || !empty) return;
     const wasNearBottom =
-      stickBottom || box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+      stickBottom || box.scrollHeight - box.scrollTop - box.clientHeight < 100;
 
-    // clear except empty
     [...box.children].forEach((c) => {
       if (c.id !== "chat-empty") c.remove();
     });
@@ -1302,13 +1930,14 @@
         sep.textContent = label;
         box.appendChild(sep);
       }
-      const mine =
-        msg.user_name === S.user.name || msg.user_name === S.user.user_id;
+      const mine = msg.user_id
+        ? msg.user_id === S.user.user_id
+        : msg.user_name === S.user.name;
       const row = document.createElement("div");
       row.className = `chat-msg${mine ? " mine" : ""}`;
-      const avStyle = avatarColor(msg.user_name);
+      const seed = msg.user_id || msg.user_name || "";
       row.innerHTML = `
-        <div class="msg-avatar" style="background:${avStyle}">${escapeHtml(initials(msg.user_name))}</div>
+        <div class="msg-avatar" style="background:${avatarColor(seed)}">${escapeHtml(initials(msg.user_name))}</div>
         <div class="msg-body">
           <div class="msg-name"></div>
           <div class="msg-text"></div>
@@ -1326,14 +1955,17 @@
 
   async function sendChat(e) {
     e.preventDefault();
+    if (!S.session) return;
     const input = $("#chat-input");
     const message = input.value.trim();
     if (!message) return;
     input.value = "";
 
+    const tempId = uuid();
     const row = {
-      id: uuid(),
+      id: tempId,
       session_id: S.session.id,
+      user_id: S.user.user_id,
       user_name: S.user.name,
       message,
       created_at: new Date().toISOString(),
@@ -1344,22 +1976,29 @@
         const data = Demo.getSessionData(S.session.id);
         data.messages.push(row);
         Demo.persist();
+        S.knownMessageIds.add(row.id);
         S.messages.push(row);
         renderChat(true);
         return;
       }
+
+      // Optimistic local (dedupe by known set when realtime echoes)
+      S.knownMessageIds.add(tempId);
+      // Don't push temp if we wait for server id — wait for insert result
       const { data, error } = await S.sb
         .from("chat_messages")
         .insert({
           session_id: S.session.id,
+          user_id: S.user.user_id,
           user_name: S.user.name,
           message,
         })
         .select()
         .single();
       if (error) throw error;
-      // realtime will also deliver; avoid dup if already present
-      if (!S.messages.find((m) => m.id === data.id)) {
+      S.knownMessageIds.delete(tempId);
+      if (!S.knownMessageIds.has(data.id)) {
+        S.knownMessageIds.add(data.id);
         S.messages.push(data);
         renderChat(true);
       }
@@ -1373,6 +2012,7 @@
   function renderTasks() {
     const list = $("#task-list");
     const empty = $("#task-empty");
+    if (!list || !empty) return;
     list.innerHTML = "";
     const total = S.todos.length;
     const done = S.todos.filter((t) => t.completed).length;
@@ -1390,7 +2030,13 @@
     }
     empty.hidden = true;
 
-    S.todos.forEach((t) => {
+    // pending first, then done
+    const ordered = [
+      ...S.todos.filter((t) => !t.completed),
+      ...S.todos.filter((t) => t.completed),
+    ];
+
+    ordered.forEach((t) => {
       const li = document.createElement("li");
       li.className = `task-item${t.completed ? " done" : ""}`;
       li.innerHTML = `
@@ -1411,6 +2057,7 @@
 
   async function addTodo(e) {
     e.preventDefault();
+    if (!S.session) return;
     const input = $("#task-input");
     const text = input.value.trim();
     if (!text) return;
@@ -1497,20 +2144,21 @@
     return $("#whiteboard");
   }
 
-  function resizeWhiteboard() {
+  function resizeWhiteboard(forceRestore = false) {
     const canvas = getCanvas();
     if (!canvas) return;
     const stage = canvas.parentElement;
-    if (!stage || stage.clientWidth === 0) return;
+    if (!stage || stage.clientWidth < 2 || stage.clientHeight < 2) return;
 
-    // preserve content
+    const oldDpr = S.wb.dpr || 1;
     const prev = document.createElement("canvas");
     prev.width = canvas.width;
     prev.height = canvas.height;
-    prev.getContext("2d").drawImage(canvas, 0, 0);
+    if (canvas.width && canvas.height) {
+      prev.getContext("2d").drawImage(canvas, 0, 0);
+    }
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    S.wb.dpr = dpr;
     const w = stage.clientWidth;
     const h = stage.clientHeight;
     canvas.width = Math.floor(w * dpr);
@@ -1522,28 +2170,43 @@
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    // restore scaled
     if (prev.width && prev.height) {
-      ctx.drawImage(
-        prev,
-        0,
-        0,
-        prev.width / (S.wb.dpr || dpr),
-        prev.height / (S.wb.dpr || dpr),
-      );
+      // Draw previous bitmap in CSS pixel space using OLD dpr
+      ctx.drawImage(prev, 0, 0, prev.width / oldDpr, prev.height / oldDpr);
+    } else if (forceRestore && S.boardData) {
+      restoreBoard(S.boardData);
     }
+
+    S.wb.dpr = dpr;
   }
 
   function restoreBoard(dataUrl) {
     const canvas = getCanvas();
-    if (!canvas || !dataUrl) return;
+    if (!canvas || !dataUrl) {
+      if (!dataUrl) clearCanvasLocal();
+      return;
+    }
     const img = new Image();
     img.onload = () => {
+      resizeWhiteboard(false);
       const ctx = canvas.getContext("2d");
-      ctx.setTransform(S.wb.dpr, 0, 0, S.wb.dpr, 0, 0);
+      const dpr = S.wb.dpr || 1;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.drawImage(img, 0, 0, canvas.clientWidth, canvas.clientHeight);
     };
+    img.onerror = () => {};
     img.src = dataUrl;
+  }
+
+  function clearCanvasLocal() {
+    const canvas = getCanvas();
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(S.wb.dpr || 1, 0, 0, S.wb.dpr || 1, 0, 0);
   }
 
   function canvasPos(e) {
@@ -1558,8 +2221,10 @@
 
   function drawLine(from, to, color, size, erase) {
     const canvas = getCanvas();
+    if (!canvas || !from || !to) return;
     const ctx = canvas.getContext("2d");
-    ctx.setTransform(S.wb.dpr, 0, 0, S.wb.dpr, 0, 0);
+    const dpr = S.wb.dpr || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.lineWidth = size;
@@ -1588,44 +2253,75 @@
     );
   }
 
-  function persistBoard() {
+  async function persistBoard(immediate = false) {
     if (!S.session) return;
-    const canvas = getCanvas();
-    try {
-      const url = canvas.toDataURL("image/png");
-      if (S.demo) {
-        Demo.getSessionData(S.session.id).board = url;
-        Demo.persist();
+    const run = async () => {
+      const canvas = getCanvas();
+      if (!canvas || !canvas.width) return;
+      const sessionId = S.session.id;
+      try {
+        const url = canvas.toDataURL("image/png");
+        S.boardData = url;
+        if (S.demo) {
+          const data = Demo.getSessionData(sessionId);
+          if (data) {
+            data.board = url;
+            Demo.persist();
+          }
+          return;
+        }
+        await S.sb.from("whiteboards").upsert({
+          session_id: sessionId,
+          data: url,
+          updated_at: new Date().toISOString(),
+          updated_by: S.user.user_id,
+        });
+      } catch (err) {
+        console.warn("board persist", err);
       }
-      // For Supabase, board is local/broadcast only (no dedicated table in schema)
-    } catch {
-      /* ignore security errors */
+    };
+
+    if (immediate) {
+      if (S.boardSaveTimer) clearTimeout(S.boardSaveTimer);
+      S.boardSaveTimer = null;
+      await run();
+      return;
     }
+    clearTimeout(S.boardSaveTimer);
+    S.boardSaveTimer = setTimeout(run, 500);
   }
 
   function setupWhiteboardEvents() {
     const canvas = getCanvas();
-    if (!canvas || canvas._ssBound) return;
-    canvas._ssBound = true;
+    if (!canvas || S.wb.bound) return;
+    S.wb.bound = true;
 
     const start = (e) => {
+      if (e.type === "mousedown" && e.button !== 0) return;
       e.preventDefault();
       S.wb.drawing = true;
       S.wb.last = canvasPos(e);
     };
     const move = (e) => {
-      if (!S.wb.drawing) return;
+      if (!S.wb.drawing || !S.wb.last) return;
       e.preventDefault();
       const pos = canvasPos(e);
       const color = $("#wb-color").value;
       const size = Number($("#wb-size").value) || 4;
       const erase = S.wb.tool === "eraser";
       drawLine(S.wb.last, pos, color, size, erase);
-      broadcast("whiteboard", { from: S.wb.last, to: pos, color, size, erase });
+      broadcast("whiteboard", {
+        type: "stroke",
+        from: S.wb.last,
+        to: pos,
+        color,
+        size,
+        erase,
+      });
       S.wb.last = pos;
     };
     const end = () => {
-      if (S.wb.drawing) persistBoard();
+      if (S.wb.drawing) persistBoard(false);
       S.wb.drawing = false;
       S.wb.last = null;
     };
@@ -1639,35 +2335,40 @@
     canvas.addEventListener("touchcancel", end);
   }
 
-  // -------------------- Files --------------------
-  const ALLOWED = new Set([
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "application/pdf",
-    "text/plain",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ]);
-  const MAX_BYTES = 2 * 1024 * 1024;
+  async function clearWhiteboard() {
+    if (!confirm("Clear the whiteboard for everyone?")) return;
+    clearCanvasLocal();
+    S.boardData = "";
+    broadcast("whiteboard", { type: "clear" });
+    if (S.demo) {
+      const data = Demo.getSessionData(S.session.id);
+      if (data) {
+        data.board = "";
+        Demo.persist();
+      }
+    } else if (S.sb && S.session) {
+      await S.sb.from("whiteboards").upsert({
+        session_id: S.session.id,
+        data: "",
+        updated_at: new Date().toISOString(),
+        updated_by: S.user.user_id,
+      });
+    }
+    toast("Whiteboard cleared", "info");
+  }
 
-  function getFileIcon(type, name = "") {
-    if (type.startsWith("image/"))
+  // -------------------- Files --------------------
+  function getFileIcon(type = "", name = "") {
+    const t = type || "";
+    if (t.startsWith("image/"))
       return { icon: "fa-file-image", color: "#00cec9" };
-    if (type === "application/pdf" || name.endsWith(".pdf"))
+    if (t === "application/pdf" || /\.pdf$/i.test(name))
       return { icon: "fa-file-pdf", color: "#ff6b6b" };
-    if (type.includes("word") || /\.docx?$/i.test(name))
+    if (t.includes("word") || /\.docx?$/i.test(name))
       return { icon: "fa-file-word", color: "#74b9ff" };
-    if (
-      type.includes("excel") ||
-      type.includes("sheet") ||
-      /\.xlsx?$/i.test(name)
-    )
+    if (t.includes("excel") || t.includes("sheet") || /\.xlsx?$/i.test(name))
       return { icon: "fa-file-excel", color: "#55efc4" };
-    if (type.startsWith("text/") || name.endsWith(".txt"))
+    if (t.startsWith("text/") || /\.txt$/i.test(name))
       return { icon: "fa-file-lines", color: "#a29bfe" };
     return { icon: "fa-file", color: "#dfe6e9" };
   }
@@ -1675,6 +2376,7 @@
   function renderFiles() {
     const grid = $("#files-grid");
     const empty = $("#files-empty");
+    if (!grid || !empty) return;
     grid.innerHTML = "";
     if (!S.files.length) {
       empty.hidden = false;
@@ -1685,8 +2387,9 @@
     S.files.forEach((file) => {
       const card = document.createElement("article");
       card.className = "file-card";
-      const meta = getFileIcon(file.file_type, file.file_name);
-      const isImg = file.file_type.startsWith("image/");
+      const ftype = file.file_type || "application/octet-stream";
+      const meta = getFileIcon(ftype, file.file_name || "");
+      const isImg = ftype.startsWith("image/");
       card.innerHTML = `
         <div class="file-preview"></div>
         <div class="file-meta">
@@ -1698,8 +2401,8 @@
           <button class="btn btn-ghost" type="button" data-act="delete"><i class="fa-solid fa-trash"></i></button>
         </div>
       `;
-      card.querySelector(".file-name").textContent = file.file_name;
-      card.querySelector(".file-name").title = file.file_name;
+      card.querySelector(".file-name").textContent = file.file_name || "file";
+      card.querySelector(".file-name").title = file.file_name || "";
       card.querySelector(".file-size").textContent = formatBytes(
         file.file_size,
       );
@@ -1707,7 +2410,7 @@
       if (isImg && file.file_data) {
         const img = document.createElement("img");
         img.src = file.file_data;
-        img.alt = file.file_name;
+        img.alt = file.file_name || "";
         img.loading = "lazy";
         preview.appendChild(img);
       } else {
@@ -1733,8 +2436,13 @@
   }
 
   async function compressImageIfNeeded(file, dataUrl) {
-    if (!file.type.startsWith("image/") || file.size < 600 * 1024)
-      return dataUrl;
+    if (
+      !file.type.startsWith("image/") ||
+      file.type === "image/gif" ||
+      file.size < 600 * 1024
+    ) {
+      return { dataUrl, type: file.type, name: file.name };
+    }
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -1749,43 +2457,59 @@
         c.width = width;
         c.height = height;
         c.getContext("2d").drawImage(img, 0, 0, width, height);
-        resolve(c.toDataURL("image/jpeg", 0.82));
+        const out = c.toDataURL("image/jpeg", 0.82);
+        const newName = file.name.replace(/\.(png|webp|jpe?g)$/i, "") + ".jpg";
+        resolve({ dataUrl: out, type: "image/jpeg", name: newName });
       };
-      img.onerror = () => resolve(dataUrl);
+      img.onerror = () =>
+        resolve({ dataUrl, type: file.type, name: file.name });
       img.src = dataUrl;
     });
   }
 
   async function handleFiles(fileList) {
+    if (!S.session) return;
     const files = [...fileList];
     if (!files.length) return;
     setLoading(true, "Uploading…");
+    let uploaded = 0;
+    let skipped = 0;
     try {
       for (const file of files) {
-        if (file.size > MAX_BYTES) {
+        if (file.size > MAX_FILE_BYTES) {
           toast(`${file.name} exceeds 2MB`, "error");
+          skipped++;
           continue;
         }
-        // allow by extension fallback
         const okType =
-          ALLOWED.has(file.type) ||
+          ALLOWED_MIME.has(file.type) ||
           /\.(jpe?g|png|gif|webp|pdf|txt|docx?|xlsx?)$/i.test(file.name);
         if (!okType) {
           toast(`${file.name}: unsupported type`, "error");
+          skipped++;
           continue;
         }
+
         let dataUrl = await readFileAsDataURL(file);
-        dataUrl = await compressImageIfNeeded(file, dataUrl);
-        // approximate size after compress
+        const compressed = await compressImageIfNeeded(file, dataUrl);
+        dataUrl = compressed.dataUrl;
+        const fileType =
+          compressed.type || file.type || "application/octet-stream";
+        const fileName = compressed.name || file.name;
         const approxSize = Math.ceil((dataUrl.length * 3) / 4);
+        if (approxSize > MAX_FILE_BYTES * 1.4) {
+          toast(`${fileName} still too large after compression`, "error");
+          skipped++;
+          continue;
+        }
 
         const row = {
           id: uuid(),
           session_id: S.session.id,
           section_id: S.activeSectionId,
-          file_name: file.name,
+          file_name: fileName,
           file_data: dataUrl,
-          file_type: file.type || "application/octet-stream",
+          file_type: fileType,
           file_size: Math.min(file.size, approxSize),
           created_at: new Date().toISOString(),
         };
@@ -1794,6 +2518,7 @@
           Demo.getSessionData(S.session.id).files.unshift(row);
           Demo.persist();
           S.files.unshift(row);
+          uploaded++;
         } else {
           const { data, error } = await S.sb
             .from("files")
@@ -1808,11 +2533,19 @@
             .select()
             .single();
           if (error) throw error;
-          if (!S.files.find((f) => f.id === data.id)) S.files.unshift(data);
+          if (!S.files.find((f) => f.id === data.id)) {
+            S.files.unshift(data);
+            uploaded++;
+          }
         }
       }
       renderFiles();
-      toast("Upload complete", "success");
+      if (uploaded)
+        toast(
+          `Uploaded ${uploaded} file${uploaded > 1 ? "s" : ""}${skipped ? ` (${skipped} skipped)` : ""}`,
+          "success",
+        );
+      else if (skipped) toast("No files uploaded", "error");
     } catch (err) {
       toast(err.message || "Upload failed", "error");
     } finally {
@@ -1822,7 +2555,7 @@
 
   function downloadFile(fileId) {
     const file = S.files.find((f) => f.id === fileId);
-    if (!file) {
+    if (!file?.file_data) {
       toast("File not found", "error");
       return;
     }
@@ -1830,15 +2563,14 @@
       toast(`Downloading ${file.file_name}…`, "info", 1800);
       let dataUrl = file.file_data;
       if (!dataUrl.includes(",")) {
-        dataUrl = `data:${file.file_type};base64,${dataUrl}`;
+        dataUrl = `data:${file.file_type || "application/octet-stream"};base64,${dataUrl}`;
       }
       const base64 = dataUrl.split(",")[1];
+      if (!base64) throw new Error("Invalid file data");
       const byteCharacters = atob(base64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
+      const byteArray = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++)
+        byteArray[i] = byteCharacters.charCodeAt(i);
       const blob = new Blob([byteArray], {
         type: file.file_type || "application/octet-stream",
       });
@@ -1848,7 +2580,7 @@
       a.download = file.file_name || "download";
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
+      a.remove();
       URL.revokeObjectURL(url);
       toast("Download started", "success");
     } catch (err) {
@@ -1877,8 +2609,9 @@
     }
   }
 
-  // -------------------- Panels / Nav --------------------
+  // -------------------- Panels --------------------
   function switchPanel(name) {
+    if (!name) return;
     S.activePanel = name;
     $$(".panel").forEach((p) => p.classList.remove("active"));
     const panel = $(`#panel-${name}`);
@@ -1904,18 +2637,16 @@
     }
     if (name === "whiteboard") {
       requestAnimationFrame(() => {
-        resizeWhiteboard();
+        resizeWhiteboard(true);
         setupWhiteboardEvents();
+        if (S.boardData) restoreBoard(S.boardData);
       });
     }
-
-    // close mobile sidebar
-    $("#sidebar")?.classList.remove("open");
+    closeSidebar();
   }
 
-  // -------------------- Global events --------------------
+  // -------------------- Events --------------------
   function bindEvents() {
-    // data-action clicks
     document.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-action]");
       if (!btn) return;
@@ -1926,19 +2657,24 @@
       } else if (action === "goto-landing") {
         showView("landing");
       } else if (action === "show-signup") {
-        showSignup($("#login-userid").value.trim());
+        showSignup(normalizeUserId($("#login-userid").value));
       } else if (action === "show-login") {
         showLogin();
       } else if (action === "logout") {
         logout();
       } else if (action === "leave-session") {
-        leaveSession();
+        leaveSession({ silent: false });
       }
     });
 
-    // nav toggle mobile landing
     $("#nav-toggle")?.addEventListener("click", () => {
-      $(".nav-links")?.classList.toggle("open");
+      const links = $("#nav-links");
+      const open = links?.classList.toggle("open");
+      $("#nav-toggle")?.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".nav")) closeMobileNav();
     });
 
     $("#form-login")?.addEventListener("submit", handleLogin);
@@ -1989,71 +2725,83 @@
     $("#copy-session-id")?.addEventListener("click", async () => {
       if (!S.session) return;
       try {
-        await navigator.clipboard.writeText(S.session.id);
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(S.session.id);
+        } else {
+          const ta = document.createElement("textarea");
+          ta.value = S.session.id;
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand("copy");
+          ta.remove();
+          if (!ok) throw new Error("copy failed");
+        }
         toast("Session ID copied", "success");
       } catch {
-        // fallback
-        const ta = document.createElement("textarea");
-        ta.value = S.session.id;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-        toast("Session ID copied", "success");
+        toast("Could not copy — select ID manually", "error");
       }
     });
 
     $("#delete-session-btn")?.addEventListener("click", deleteSession);
     $("#add-section-btn")?.addEventListener("click", addSection);
-    $("#sidebar-toggle")?.addEventListener("click", () =>
-      $("#sidebar").classList.toggle("open"),
-    );
+    $("#sidebar-toggle")?.addEventListener("click", () => {
+      const open = $("#sidebar")?.classList.contains("open");
+      if (open) closeSidebar();
+      else openSidebar();
+    });
+    $("#sidebar-backdrop")?.addEventListener("click", closeSidebar);
 
-    // panel nav
     document.addEventListener("click", (e) => {
       const nav = e.target.closest("[data-panel]");
-      if (!nav) return;
+      if (!nav || !nav.dataset.panel) return;
+      // ignore if inside a form button without panel intent already handled
       switchPanel(nav.dataset.panel);
     });
 
-    // editor toolbar
     $$(".editor-toolbar .tool-btn[data-cmd]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         const cmd = btn.dataset.cmd;
         const val = btn.dataset.val;
-        if (cmd === "formatBlock") {
-          document.execCommand("formatBlock", false, val);
-        } else {
-          document.execCommand(cmd, false, null);
+        try {
+          if (cmd === "formatBlock") {
+            // Prefer bracket form for broader browser support
+            const tag = val.startsWith("<") ? val : `<${val}>`;
+            document.execCommand("formatBlock", false, tag);
+          } else {
+            document.execCommand(cmd, false, null);
+          }
+        } catch {
+          /* ignore */
         }
-        $("#editor").focus();
+        $("#editor")?.focus();
         scheduleSave();
       });
     });
 
     $("#editor")?.addEventListener("input", scheduleSave);
+    $("#editor")?.addEventListener("blur", () => {
+      if (S.session && S.activeSectionId && !S.leaving) {
+        clearTimeout(S.saveTimer);
+        saveTextImmediate(S.activeSectionId, $("#editor").innerHTML);
+      }
+    });
     $("#history-btn")?.addEventListener("click", openHistory);
     $$("[data-close]").forEach((b) => {
       b.addEventListener("click", () => {
         const id = b.dataset.close;
-        $(`#${id}`).hidden = true;
+        const m = $(`#${id}`);
+        if (m) m.hidden = true;
       });
     });
     $("#history-modal")?.addEventListener("click", (e) => {
       if (e.target.id === "history-modal") e.target.hidden = true;
     });
 
-    // chat
     $("#form-chat")?.addEventListener("submit", sendChat);
-    $("#chat-input")?.addEventListener("input", () => {
-      broadcast("typing", { where: "chat" });
-    });
-
-    // tasks
+    $("#chat-input")?.addEventListener("input", () => throttleTyping("chat"));
     $("#form-task")?.addEventListener("submit", addTodo);
 
-    // whiteboard tools
     $$("[data-wb]").forEach((btn) => {
       btn.addEventListener("click", () => {
         $$("[data-wb]").forEach((b) => b.classList.remove("active"));
@@ -2061,21 +2809,11 @@
         S.wb.tool = btn.dataset.wb;
       });
     });
-    $("#wb-clear")?.addEventListener("click", () => {
-      if (!confirm("Clear the whiteboard?")) return;
-      const canvas = getCanvas();
-      const ctx = canvas.getContext("2d");
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.setTransform(S.wb.dpr, 0, 0, S.wb.dpr, 0, 0);
-      persistBoard();
-      toast("Whiteboard cleared", "info");
-    });
+    $("#wb-clear")?.addEventListener("click", clearWhiteboard);
 
-    // files
     const dz = $("#dropzone");
     const fi = $("#file-input");
-    dz?.addEventListener("click", () => fi.click());
+    dz?.addEventListener("click", () => fi?.click());
     fi?.addEventListener("change", () => {
       handleFiles(fi.files);
       fi.value = "";
@@ -2092,16 +2830,12 @@
         dz.classList.remove("dragover");
       });
     });
-    dz?.addEventListener("drop", (e) => {
-      handleFiles(e.dataTransfer.files);
-    });
+    dz?.addEventListener("drop", (e) => handleFiles(e.dataTransfer.files));
 
-    // resize
     window.addEventListener("resize", () => {
-      if (S.activePanel === "whiteboard") resizeWhiteboard();
+      if (S.activePanel === "whiteboard") resizeWhiteboard(false);
     });
 
-    // mobile keyboard / visualViewport
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", () => {
         document.documentElement.style.setProperty(
@@ -2115,29 +2849,34 @@
       });
     }
 
-    // before unload save
     window.addEventListener("beforeunload", () => {
-      if (S.session && S.activeSectionId) {
-        const html = $("#editor")?.innerHTML || "";
-        // best-effort sync for demo
-        if (S.demo) {
-          try {
-            const data = Demo.getSessionData(S.session.id);
-            if (data.texts[S.activeSectionId]) {
-              data.texts[S.activeSectionId].content = html;
-              Demo.persist();
-            }
-          } catch {
-            /* */
+      if (!S.session || !S.activeSectionId) return;
+      const html = $("#editor")?.innerHTML || "";
+      if (S.demo) {
+        try {
+          const data = Demo.getSessionData(S.session.id);
+          if (data?.texts[S.activeSectionId]) {
+            data.texts[S.activeSectionId].content = sanitizeHtml(html);
+            Demo.persist();
           }
+          if (data && S.boardData) data.board = S.boardData;
+          Demo.persist();
+        } catch {
+          /* ignore */
         }
+      }
+      // Supabase: best-effort keepalive is limited; blur-save covers most cases
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeSidebar();
+        closeMobileNav();
+        const modal = $("#history-modal");
+        if (modal && !modal.hidden) modal.hidden = true;
       }
     });
 
-    // global errors
-    window.addEventListener("error", () => {
-      /* swallow UI crashes — toast only for user-facing ops */
-    });
     window.addEventListener("unhandledrejection", (e) => {
       console.warn("Unhandled rejection", e.reason);
     });
@@ -2151,10 +2890,10 @@
       await initSupabase();
       const saved = restoreUserSession();
       if (saved?.user_id) {
-        // re-validate lightly
         try {
           const user = await findUser(saved.user_id);
-          if (user) {
+          if (user && user.user_id === normalizeUserId(saved.user_id)) {
+            // Soft restore: still require that account exists; password not re-prompted (session convenience)
             S.user = {
               user_id: user.user_id,
               name: user.name,
@@ -2163,10 +2902,21 @@
             persistUserSession();
             enterHub();
           } else {
+            localStorage.removeItem(LS.auth);
             showView("landing");
           }
         } catch {
-          showView("landing");
+          // Offline demo: allow cached identity
+          if (S.demo && saved.user_id && saved.name) {
+            S.user = {
+              user_id: normalizeUserId(saved.user_id),
+              name: saved.name,
+              role: saved.role || "member",
+            };
+            enterHub();
+          } else {
+            showView("landing");
+          }
         }
       } else {
         showView("landing");
@@ -2180,9 +2930,9 @@
       setLoading(false);
     }
 
-    // PWA
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      const swPath = new URL("sw.js", window.location.href).pathname;
+      navigator.serviceWorker.register(swPath).catch(() => {});
     }
   }
 

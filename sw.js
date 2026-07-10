@@ -1,5 +1,5 @@
-/* SyncSpace Service Worker — offline static asset support */
-const CACHE = "syncspace-v1";
+/* SyncSpace Service Worker v2 — network-first for app shell */
+const CACHE = "syncspace-v2";
 const ASSETS = ["/", "/index.html", "/style.css", "/app.js", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -29,8 +29,32 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  // Never cache API / Supabase
-  if (url.pathname.startsWith("/api/") || url.hostname.includes("supabase")) {
+  if (url.pathname.startsWith("/api/") || url.hostname.includes("supabase"))
+    return;
+
+  // Network-first for JS/CSS so deploys aren't sticky-stale
+  const isShell =
+    url.pathname.endsWith(".js") ||
+    url.pathname.endsWith(".css") ||
+    url.pathname === "/" ||
+    url.pathname.endsWith(".html");
+
+  if (isShell) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (
+            response &&
+            response.status === 200 &&
+            response.type === "basic"
+          ) {
+            const clone = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request)),
+    );
     return;
   }
 

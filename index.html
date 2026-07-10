@@ -30,7 +30,6 @@
     />
   </head>
   <body>
-    <!-- Animated background orbs -->
     <div class="bg-orbs" aria-hidden="true">
       <div class="orb orb-1"></div>
       <div class="orb orb-2"></div>
@@ -38,21 +37,31 @@
       <div class="orb orb-4"></div>
     </div>
 
-    <!-- ===================== LANDING ===================== -->
+    <!-- LANDING -->
     <div id="view-landing" class="view active">
       <nav class="nav glass">
         <div class="nav-brand">
           <span class="logo-mark"><i class="fa-solid fa-rocket"></i></span>
           <span class="logo-text">SyncSpace</span>
         </div>
-        <div class="nav-links">
+        <div class="nav-links" id="nav-links">
           <a href="#features">Features</a>
           <a href="#how">How it works</a>
-          <button class="btn btn-primary btn-sm" data-action="goto-auth">
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            data-action="goto-auth"
+          >
             Get Started
           </button>
         </div>
-        <button class="nav-toggle" id="nav-toggle" aria-label="Menu">
+        <button
+          class="nav-toggle"
+          id="nav-toggle"
+          type="button"
+          aria-label="Menu"
+          aria-expanded="false"
+        >
           <i class="fa-solid fa-bars"></i>
         </button>
       </nav>
@@ -69,7 +78,11 @@
             — all in one beautiful glass workspace.
           </p>
           <div class="hero-cta">
-            <button class="btn btn-primary btn-lg" data-action="goto-auth">
+            <button
+              type="button"
+              class="btn btn-primary btn-lg"
+              data-action="goto-auth"
+            >
               <i class="fa-solid fa-bolt"></i> Get Started
             </button>
             <a href="#features" class="btn btn-ghost btn-lg">
@@ -203,23 +216,19 @@
           <div class="footer-links">
             <a href="#features">Features</a>
             <a href="#how">How it works</a>
-            <a href="#" data-action="goto-auth">Login</a>
+            <button type="button" class="link-btn" data-action="goto-auth">
+              Login
+            </button>
           </div>
           <div class="footer-social">
             <a
-              href="https://github.com"
+              href="https://github.com/mirajparadva101/SyncSpace"
               target="_blank"
               rel="noopener"
               aria-label="GitHub"
-              ><i class="fa-brands fa-github"></i
-            ></a>
-            <a
-              href="https://twitter.com"
-              target="_blank"
-              rel="noopener"
-              aria-label="Twitter"
-              ><i class="fa-brands fa-x-twitter"></i
-            ></a>
+            >
+              <i class="fa-brands fa-github"></i>
+            </a>
           </div>
         </div>
         <p class="footer-copy">
@@ -228,17 +237,17 @@
       </footer>
     </div>
 
-    <!-- ===================== AUTH ===================== -->
+    <!-- AUTH -->
     <div id="view-auth" class="view">
       <div class="auth-wrap">
         <button
+          type="button"
           class="btn btn-ghost btn-sm auth-back"
           data-action="goto-landing"
         >
           <i class="fa-solid fa-arrow-left"></i> Back
         </button>
 
-        <!-- Login -->
         <div id="auth-login" class="auth-card glass">
           <div class="auth-logo"><i class="fa-solid fa-rocket"></i></div>
           <h2>Welcome back</h2>
@@ -254,6 +263,7 @@
                 required
                 minlength="3"
                 maxlength="32"
+                autocomplete="username"
               />
             </label>
             <label class="field">
@@ -264,7 +274,8 @@
                 name="password"
                 placeholder="Password"
                 required
-                minlength="4"
+                minlength="6"
+                autocomplete="current-password"
               />
             </label>
             <p class="form-error" id="login-error" hidden></p>
@@ -287,7 +298,6 @@
           </p>
         </div>
 
-        <!-- Signup -->
         <div id="auth-signup" class="auth-card glass" hidden>
           <div class="auth-logo"><i class="fa-solid fa-user-plus"></i></div>
           <h2>Create account</h2>
@@ -305,6 +315,7 @@
                 required
                 minlength="2"
                 maxlength="64"
+                autocomplete="name"
               />
             </label>
             <label class="field">
@@ -317,6 +328,7 @@
                 required
                 minlength="3"
                 maxlength="32"
+                autocomplete="username"
               />
             </label>
             <label class="field">
@@ -325,12 +337,13 @@
                 type="password"
                 id="signup-password"
                 name="password"
-                placeholder="Password"
+                placeholder="Password (min 6)"
                 required
-                minlength="4"
+                minlength="6"
+                autocomplete="new-password"
               />
             </label>
-            <div class="strength" id="pw-strength" aria-hidden="true">
+            <div class="strength" id="pw-strength" aria-live="polite">
               <div class="strength-bar"><span></span></div>
               <span class="strength-label">Weak</span>
             </div>
@@ -342,7 +355,8 @@
                 name="confirm"
                 placeholder="Confirm Password"
                 required
-                minlength="4"
+                minlength="6"
+                autocomplete="new-password"
               />
             </label>
             <p class="form-error" id="signup-error" hidden></p>
@@ -367,7 +381,7 @@
       </div>
     </div>
 
-    <!-- ===================== SESSION HUB ===================== -->
+    <!-- HUB -->
     <div id="view-hub" class="view">
       <div class="hub-wrap">
         <header class="hub-header glass">
@@ -379,6 +393,7 @@
             </div>
           </div>
           <button
+            type="button"
             class="btn btn-ghost btn-sm"
             data-action="logout"
             title="Logout"
@@ -401,6 +416,7 @@
                   placeholder="Session name"
                   required
                   maxlength="64"
+                  minlength="1"
                 />
               </label>
               <label class="field">
@@ -408,7 +424,7 @@
                 <input
                   type="password"
                   id="create-password"
-                  placeholder="Session password"
+                  placeholder="Session password (min 3)"
                   required
                   minlength="3"
                 />
@@ -438,6 +454,7 @@
                   minlength="6"
                   maxlength="6"
                   class="mono uppercase"
+                  autocomplete="off"
                 />
               </label>
               <label class="field">
@@ -447,6 +464,7 @@
                   id="join-password"
                   placeholder="Session password"
                   required
+                  minlength="3"
                 />
               </label>
               <button type="submit" class="btn btn-secondary btn-block">
@@ -455,16 +473,23 @@
             </form>
           </div>
         </div>
+
+        <div class="hub-recent glass" id="hub-recent" hidden>
+          <h4>Recent sessions (this device)</h4>
+          <ul id="recent-list"></ul>
+        </div>
       </div>
     </div>
 
-    <!-- ===================== DASHBOARD ===================== -->
+    <!-- DASHBOARD -->
     <div id="view-dashboard" class="view">
+      <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
       <aside class="sidebar glass" id="sidebar">
         <div class="sidebar-top">
           <div class="session-id-row">
             <span class="session-id mono" id="session-id-label">------</span>
             <button
+              type="button"
               class="icon-btn"
               id="copy-session-id"
               title="Copy Session ID"
@@ -473,12 +498,18 @@
             </button>
           </div>
           <div class="session-name" id="session-name-label">Session</div>
+          <div class="online-users" id="online-users" title="Online now"></div>
         </div>
 
         <div class="sidebar-sections">
           <div class="sidebar-label">
             <span>Sections</span>
-            <button class="icon-btn" id="add-section-btn" title="Add section">
+            <button
+              type="button"
+              class="icon-btn"
+              id="add-section-btn"
+              title="Add section"
+            >
               <i class="fa-solid fa-plus"></i>
             </button>
           </div>
@@ -486,32 +517,34 @@
         </div>
 
         <nav class="sidebar-nav" id="sidebar-nav">
-          <button class="nav-item active" data-panel="editor">
+          <button type="button" class="nav-item active" data-panel="editor">
             <i class="fa-solid fa-file-lines"></i> <span>Editor</span>
           </button>
-          <button class="nav-item" data-panel="chat">
+          <button type="button" class="nav-item" data-panel="chat">
             <i class="fa-solid fa-comments"></i> <span>Chat</span
             ><span class="badge" id="chat-badge" hidden>0</span>
           </button>
-          <button class="nav-item" data-panel="tasks">
+          <button type="button" class="nav-item" data-panel="tasks">
             <i class="fa-solid fa-list-check"></i> <span>Tasks</span>
           </button>
-          <button class="nav-item" data-panel="whiteboard">
+          <button type="button" class="nav-item" data-panel="whiteboard">
             <i class="fa-solid fa-paintbrush"></i> <span>Board</span>
           </button>
-          <button class="nav-item" data-panel="files">
+          <button type="button" class="nav-item" data-panel="files">
             <i class="fa-solid fa-folder-open"></i> <span>Files</span>
           </button>
         </nav>
 
         <div class="sidebar-bottom">
           <button
+            type="button"
             class="btn btn-ghost btn-sm btn-block"
             id="delete-session-btn"
           >
             <i class="fa-solid fa-trash"></i> Delete Session
           </button>
           <button
+            type="button"
             class="btn btn-ghost btn-sm btn-block"
             data-action="leave-session"
           >
@@ -523,6 +556,7 @@
       <div class="dash-main">
         <header class="dash-header glass">
           <button
+            type="button"
             class="icon-btn mobile-only"
             id="sidebar-toggle"
             aria-label="Toggle sidebar"
@@ -541,48 +575,75 @@
         </header>
 
         <main class="dash-content" id="dash-content">
-          <!-- EDITOR -->
-          <section class="panel active" id="panel-editor">
+          <section
+            class="panel active"
+            id="panel-editor"
+            data-panel-name="editor"
+          >
             <div class="editor-toolbar glass">
-              <button class="tool-btn" data-cmd="bold" title="Bold">
+              <button
+                type="button"
+                class="tool-btn"
+                data-cmd="bold"
+                title="Bold"
+              >
                 <i class="fa-solid fa-bold"></i>
               </button>
-              <button class="tool-btn" data-cmd="italic" title="Italic">
+              <button
+                type="button"
+                class="tool-btn"
+                data-cmd="italic"
+                title="Italic"
+              >
                 <i class="fa-solid fa-italic"></i>
               </button>
-              <button class="tool-btn" data-cmd="underline" title="Underline">
+              <button
+                type="button"
+                class="tool-btn"
+                data-cmd="underline"
+                title="Underline"
+              >
                 <i class="fa-solid fa-underline"></i>
               </button>
-              <button class="tool-btn" data-cmd="strikeThrough" title="Strike">
+              <button
+                type="button"
+                class="tool-btn"
+                data-cmd="strikeThrough"
+                title="Strike"
+              >
                 <i class="fa-solid fa-strikethrough"></i>
               </button>
               <span class="tool-sep"></span>
               <button
+                type="button"
                 class="tool-btn"
                 data-cmd="formatBlock"
-                data-val="h1"
+                data-val="H1"
                 title="H1"
               >
                 H1
               </button>
               <button
+                type="button"
                 class="tool-btn"
                 data-cmd="formatBlock"
-                data-val="h2"
+                data-val="H2"
                 title="H2"
               >
                 H2
               </button>
               <button
+                type="button"
                 class="tool-btn"
                 data-cmd="formatBlock"
-                data-val="h3"
+                data-val="H3"
                 title="H3"
               >
                 H3
               </button>
               <span class="tool-sep"></span>
               <button
+                type="button"
                 class="tool-btn"
                 data-cmd="insertUnorderedList"
                 title="Bullets"
@@ -590,6 +651,7 @@
                 <i class="fa-solid fa-list-ul"></i>
               </button>
               <button
+                type="button"
                 class="tool-btn"
                 data-cmd="insertOrderedList"
                 title="Numbers"
@@ -597,15 +659,21 @@
                 <i class="fa-solid fa-list-ol"></i>
               </button>
               <button
+                type="button"
                 class="tool-btn"
                 data-cmd="formatBlock"
-                data-val="blockquote"
+                data-val="BLOCKQUOTE"
                 title="Quote"
               >
                 <i class="fa-solid fa-quote-left"></i>
               </button>
               <span class="tool-sep"></span>
-              <button class="tool-btn" id="history-btn" title="Version history">
+              <button
+                type="button"
+                class="tool-btn"
+                id="history-btn"
+                title="Version history"
+              >
                 <i class="fa-solid fa-clock-rotate-left"></i>
               </button>
             </div>
@@ -622,12 +690,14 @@
               id="editor"
               contenteditable="true"
               spellcheck="true"
+              role="textbox"
+              aria-multiline="true"
+              aria-label="Document editor"
               data-placeholder="Start writing…"
             ></div>
           </section>
 
-          <!-- CHAT -->
-          <section class="panel" id="panel-chat">
+          <section class="panel" id="panel-chat" data-panel-name="chat">
             <div class="chat-wrap glass">
               <div class="chat-messages" id="chat-messages">
                 <div class="empty-state" id="chat-empty">
@@ -655,8 +725,7 @@
             </div>
           </section>
 
-          <!-- TASKS -->
-          <section class="panel" id="panel-tasks">
+          <section class="panel" id="panel-tasks" data-panel-name="tasks">
             <div class="tasks-stats">
               <div class="tstat glass">
                 <span id="task-total">0</span><small>Total</small>
@@ -690,13 +759,26 @@
             </div>
           </section>
 
-          <!-- WHITEBOARD -->
-          <section class="panel" id="panel-whiteboard">
+          <section
+            class="panel"
+            id="panel-whiteboard"
+            data-panel-name="whiteboard"
+          >
             <div class="wb-toolbar glass">
-              <button class="tool-btn active" data-wb="pen" title="Pen">
+              <button
+                type="button"
+                class="tool-btn active"
+                data-wb="pen"
+                title="Pen"
+              >
                 <i class="fa-solid fa-pen"></i>
               </button>
-              <button class="tool-btn" data-wb="eraser" title="Eraser">
+              <button
+                type="button"
+                class="tool-btn"
+                data-wb="eraser"
+                title="Eraser"
+              >
                 <i class="fa-solid fa-eraser"></i>
               </button>
               <input type="color" id="wb-color" value="#6c5ce7" title="Color" />
@@ -704,17 +786,24 @@
                 Size
                 <input type="range" id="wb-size" min="1" max="40" value="4" />
               </label>
-              <button class="tool-btn" id="wb-clear" title="Clear">
+              <button
+                type="button"
+                class="tool-btn"
+                id="wb-clear"
+                title="Clear"
+              >
                 <i class="fa-solid fa-trash"></i>
               </button>
             </div>
             <div class="wb-stage glass">
-              <canvas id="whiteboard"></canvas>
+              <canvas
+                id="whiteboard"
+                aria-label="Collaborative whiteboard"
+              ></canvas>
             </div>
           </section>
 
-          <!-- FILES -->
-          <section class="panel" id="panel-files">
+          <section class="panel" id="panel-files" data-panel-name="files">
             <div class="dropzone glass" id="dropzone">
               <i class="fa-solid fa-cloud-arrow-up"></i>
               <p>Drag & drop files here, or click to browse</p>
@@ -736,32 +825,41 @@
         </main>
       </div>
 
-      <!-- Mobile bottom nav -->
       <nav class="bottom-nav glass mobile-only" id="bottom-nav">
-        <button class="nav-item active" data-panel="editor">
+        <button type="button" class="nav-item active" data-panel="editor">
           <i class="fa-solid fa-file-lines"></i><span>Editor</span>
         </button>
-        <button class="nav-item" data-panel="chat">
+        <button type="button" class="nav-item" data-panel="chat">
           <i class="fa-solid fa-comments"></i><span>Chat</span>
+          <span class="badge badge-float" id="chat-badge-mobile" hidden>0</span>
         </button>
-        <button class="nav-item" data-panel="tasks">
+        <button type="button" class="nav-item" data-panel="tasks">
           <i class="fa-solid fa-list-check"></i><span>Tasks</span>
         </button>
-        <button class="nav-item" data-panel="whiteboard">
+        <button type="button" class="nav-item" data-panel="whiteboard">
           <i class="fa-solid fa-paintbrush"></i><span>Board</span>
         </button>
-        <button class="nav-item" data-panel="files">
+        <button type="button" class="nav-item" data-panel="files">
           <i class="fa-solid fa-folder-open"></i><span>Files</span>
         </button>
       </nav>
     </div>
 
-    <!-- History modal -->
     <div class="modal" id="history-modal" hidden>
-      <div class="modal-card glass">
+      <div
+        class="modal-card glass"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="history-title"
+      >
         <div class="modal-head">
-          <h3>Version History</h3>
-          <button class="icon-btn" data-close="history-modal">
+          <h3 id="history-title">Version History</h3>
+          <button
+            type="button"
+            class="icon-btn"
+            data-close="history-modal"
+            aria-label="Close"
+          >
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
@@ -769,7 +867,6 @@
       </div>
     </div>
 
-    <!-- Loading overlay -->
     <div class="loading-overlay" id="loading" hidden>
       <div class="loading-card glass">
         <div class="spinner"></div>
@@ -778,10 +875,8 @@
       </div>
     </div>
 
-    <!-- Toasts -->
     <div class="toast-wrap" id="toasts" aria-live="polite"></div>
 
-    <!-- Supabase client (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="app.js"></script>
   </body>
